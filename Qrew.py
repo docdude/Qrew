@@ -1,0 +1,1209 @@
+# Qrew.py
+
+from cProfile import label
+import os
+import re
+import sys
+import time
+
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
+                            QPushButton, QLineEdit, QCheckBox, QGridLayout,
+                            QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog,
+                            QDialog, QSizePolicy, QComboBox, QScrollArea, QGroupBox, QFrame, QToolButton, QStyle, QToolTip)
+
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QSettings, QEvent, QSize
+from PyQt5.QtGui import QPixmap, QPalette, QBrush, QColor, QFont, QIcon
+import platform
+from threading import Thread
+from Qrew_common import SPEAKER_LABELS
+import Qrew_common
+
+from Qrew_api_helper import (get_measurement_count, get_measurement_by_uuid, get_all_measurements_with_uuid, get_selected_channels_with_measurements_uuid, get_measurement_distortion_by_uuid,
+                             save_all_measurements, delete_all_measurements, delete_measurement_by_uuid, delete_measurements_by_uuid,
+                             check_rew_connection, check_rew_health, subscribe_to_rew_status, subscribe_to_rew_warnings, subscribe_to_rew_errors)
+
+from Qrew_measurement_metrics import evaluate_measurement
+
+from Qrew_workers import MeasurementWorker, ProcessingWorker
+from Qrew_styles import tint, HTML_ICONS
+from Qrew_button import Button
+from Qrew_gridwidget import GridWidget
+
+
+from Qrew_message_handlers import run_flask_server, message_bridge
+
+from Qrew_dialogs import SettingsDialog, PositionDialog, MeasurementQualityDialog, ClearMeasurementsDialog, SaveMeasurementsDialog, RepeatMeasurementDialog, DeleteSelectedMeasurementsDialog
+
+# Force Windows to use IPv4 for all requests
+if platform.system() == "Windows":
+    import socket
+    import requests.packages.urllib3.util.connection as urllib3_cn
+
+    def allowed_gai_family():
+        return socket.AF_INET  # Force IPv4 only
+    
+    urllib3_cn.allowed_gai_family = allowed_gai_family
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.qsettings = QSettings("Docdude", "Qrew")
+        self.setWindowTitle("Qrew")
+        self.setFixedSize(500, 800)  # Increased height for metrics display
+
+        self.app_settings = SettingsDialog.load()
+        print(f"DEBUG: Loaded settings: {self.app_settings}")
+        print(f"DEBUG: Settings file exists: {os.path.exists('settings.json')}")
+        # Message tracking
+        self.current_warnings = []
+        self.current_errors = []
+        self.last_status_message = ""
+        self.flash_timer = None  # Add flash timer
+        
+        # Track the last valid position count
+        self.last_valid_positions = 9  # Default
+        self.measurement_qualities = {}  # {(channel, position): {'rating': 'PASS/CAUTION/RETAKE', 'score': float, 'uuid': str}}
+
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # Set background image
+        self.set_background_image("banner_500x680.png")
+        
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(10)
+
+
+        # Initialize measurement state
+        self.measurement_state = {
+            'channels': [],
+            'num_positions': 0,
+            'current_position': 0,
+            'initial_count': -1,
+            'running': False,
+            'channel_index': 0
+        }
+ 
+        # Channel header container
+        channel_header_container = QWidget()
+        channel_header_container.setStyleSheet("background: transparent;")
+        channel_header_layout = QHBoxLayout(channel_header_container)
+        channel_header_layout.setContentsMargins(5, 7, -5, 7)
+        self.settings_btn = QToolButton()
+        self.settings_btn.setAutoRaise(True)
+
+       # self.settings_btn.setIcon(QIcon("gear@2x.png"))
+        self.settings_btn.setIconSize(QSize(20, 20))
+        self.settings_btn.setToolTip("Settings")
+        base_pix = QPixmap("gear@2x.png")            # transparent PNG
+        hover_pix = tint(base_pix, QColor("#00A2FF"))  # cyan tint
+
+        icon = QIcon()
+        icon.addPixmap(base_pix,  QIcon.Normal,  QIcon.Off)
+        icon.addPixmap(hover_pix, QIcon.Active,  QIcon.Off)
+        icon.addPixmap(hover_pix, QIcon.Selected,QIcon.Off)
+        self.settings_btn.setIcon(icon)
+
+        # optional minimal CSS (no backdrop tint now)
+        self.settings_btn.setStyleSheet("""
+            QToolButton { border:none; background:transparent; padding:0; }
+        """)
+        self.settings_btn.clicked.connect(self.open_settings_dialog)
+
+        channel_header_layout.addWidget(self.settings_btn, 0, Qt.AlignLeft)
+                
+        # Channel selection section
+        channel_label = QLabel("Select Speaker Channels:")
+        channel_label.setStyleSheet("QLabel { color: white; background: transparent; padding: 0px 0px 0px 20px; text-align: left; }")
+        channel_header_layout.addWidget(channel_label)
+        channel_header_layout.addStretch()
+
+        # Clear button
+        self.clear_button = Button("Clear")
+        self.clear_button.clicked.connect(self.clear_selections)
+        self.clear_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 2px 8px;
+                font-size: 10px;
+            }
+        """)
+
+        self.clear_button.setMinimumHeight(20)
+        self.clear_button.setMinimumWidth(50)
+        self.clear_button.setToolTip("Clear all selected channels")
+        channel_header_layout.addWidget(self.clear_button)
+        main_layout.addWidget(channel_header_container)
+        main_layout.addSpacing(-10)
+
+        # Checkbox grid with proper spacing
+        checkbox_widget = QWidget()
+        checkbox_widget.setStyleSheet("background: transparent;")
+        checkbox_layout = QGridLayout(checkbox_widget)
+
+        # Configure spacing for better appearance
+        checkbox_layout.setHorizontalSpacing(18)
+        checkbox_layout.setVerticalSpacing(8)
+        checkbox_layout.setContentsMargins(55, 8, 15, 8)
+
+        # Make all columns the same width
+        for col in range(4):
+            checkbox_layout.setColumnStretch(col, 1)
+
+        self.channel_checkboxes = {}
+        columns = 4
+
+        for i, (abbr, full_name) in enumerate(SPEAKER_LABELS.items()):
+            checkbox = QCheckBox(abbr)
+            checkbox.setToolTip(full_name)
+            checkbox.setMinimumWidth(75)
+            
+            checkbox.setStyleSheet("""
+                QCheckBox {
+                   padding: 3px; 
+                }
+                QCheckBox::indicator {
+                    width: 15px;
+                    height: 15px;
+                    border: 1px solid #888;
+                    border-radius: 3px;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                                stop:0 #eee, stop:1 #bbb);
+                }
+                QCheckBox::indicator:checked {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                                stop:0 #aaffaa, stop:1 #55aa55);
+                    border: 1px solid #444;
+                }
+            """)
+            
+            checkbox_layout.addWidget(checkbox, i // columns, i % columns, Qt.AlignLeft)
+            self.channel_checkboxes[abbr] = checkbox
+
+        # Set preferred size for the container
+        checkbox_widget.setMinimumWidth(420)
+        checkbox_widget.setMaximumWidth(500)
+        checkbox_widget.setFixedHeight(170)
+        main_layout.addWidget(checkbox_widget, alignment=Qt.AlignCenter)
+        main_layout.addSpacing(10)
+ 
+        # ───────────────── num-positions row ───────────────── #
+        pos_container = QWidget()
+        pos_container.setStyleSheet("background: transparent;")
+        pos_layout = QHBoxLayout(pos_container)
+        pos_layout.setContentsMargins(0, 0, 0, 0)
+
+        pos_label = QLabel("Number of Positions:")
+        pos_label.setStyleSheet("color: white; font-weight: bold;")
+        pos_layout.addWidget(pos_label)
+        pos_layout.addSpacing(10)
+
+        # ComboBox with fixed dropdown text visibility
+        self.pos_selector = QComboBox()
+        self.pos_selector.addItems(["1", "3", "4", "5", "6", "7", "8", "9"])
+        self.pos_selector.setCurrentText("9")
+       # self.pos_selector.setMaximumWidth(70)
+
+        self.pos_selector.setStyleSheet("""
+        /* ========== CLOSED COMBO ========== */
+        QComboBox {
+            border: 2px solid gray;
+            border-radius: 4px;
+            padding: 1px 22px 1px 6px;     /* leave space for arrow */
+            background: rgba(0, 0, 0, 0.80);   /* 50 % opacity black */
+            color: white;                       /* visible text      */
+            font-size: 14px;
+            font: 'arial'; /* font family       */
+        }
+
+        """)
+
+
+        pos_layout.addWidget(self.pos_selector)
+
+        # Grid widget container with fixed size
+        grid_container = QWidget()
+        grid_container.setFixedSize(220, 160)
+        grid_container.setStyleSheet("background: transparent;")
+        grid_container_layout = QVBoxLayout(grid_container)
+        grid_container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Initial grid
+        n = int(self.pos_selector.currentText())
+        self.grid_widget = GridWidget(positions=n, current_pos=self.measurement_state['current_position'])
+        self.grid_widget.setMinimumSize(220, 160)
+        self.grid_widget.set_horizontal_stretch(1.3)
+        grid_container_layout.addWidget(self.grid_widget, alignment=Qt.AlignCenter)
+
+        pos_layout.addSpacing(0)
+        pos_layout.addWidget(grid_container, alignment=Qt.AlignCenter)
+
+        main_layout.addWidget(pos_container, alignment=Qt.AlignCenter)
+        main_layout.addSpacing(-10)
+
+        # React to user choice
+        self.pos_selector.currentTextChanged.connect(self._rebuild_grid)
+
+        # ───────────────── Metrics Display ───────────────── #
+        metrics_container = QWidget()
+        metrics_container.setStyleSheet("background: transparent;")
+        metrics_layout = QHBoxLayout(metrics_container)
+        metrics_layout.setContentsMargins(50, 0, 50, 0)
+        
+        # Metrics label
+        self.metrics_label = QLabel("")
+        self.metrics_label.setStyleSheet("""
+            QLabel { 
+                background: rgba(0, 0, 0, 0.8); 
+                color: white; 
+                padding: 5px 10px; 
+                border: 1px solid #444;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+        """)
+        self.metrics_label.setTextFormat(Qt.RichText)
+        self.metrics_label.setAlignment(Qt.AlignCenter)
+        self.metrics_label.setMinimumHeight(30)
+        self.metrics_label.hide()  # Initially hidden
+        
+        metrics_layout.addWidget(self.metrics_label)
+        main_layout.addWidget(metrics_container, alignment=Qt.AlignCenter)
+        main_layout.addSpacing(5)
+
+        # Command button container
+        meas_container = QWidget()
+        meas_container.setStyleSheet("background: transparent;")
+        meas_layout = QHBoxLayout(meas_container)
+        meas_layout.setContentsMargins(10, -10, 10, 10)
+        meas_layout.setSpacing(20)
+
+        # Load stimulus button
+        self.load_button = Button("Load Stimulus File")
+        self.load_button.clicked.connect(self.load_stimulus_file)
+        self.load_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        """)
+        self.load_button.setMaximumHeight(120)
+        meas_layout.addWidget(self.load_button)
+
+        # Start button
+        self.start_button = Button("Start Measurement")
+        self.start_button.clicked.connect(self.on_start)
+        self.start_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        """)
+        meas_layout.addWidget(self.start_button)
+
+        # Repeat button
+        self.repeat_button = Button("Repeat Measurement")
+        self.repeat_button.clicked.connect(self.show_repeat_measurement_dialog)
+        self.repeat_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        """)
+        meas_layout.addWidget(self.repeat_button)
+
+        main_layout.addWidget(meas_container, alignment=Qt.AlignCenter)
+        main_layout.addSpacing(-15)
+
+        # Process button container
+        cmd_container = QWidget()
+        cmd_container.setStyleSheet("background: transparent;")
+        cmd_layout = QHBoxLayout(cmd_container)
+        cmd_layout.setContentsMargins(10, -10, 10, 10)
+        cmd_layout.setSpacing(20)
+
+        # Cross button
+        self.cross_button = Button("Cross Corr Align")
+        self.cross_button.clicked.connect(self.on_cross_corr_align)
+        self.cross_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        """)
+        cmd_layout.addWidget(self.cross_button)
+
+        # Vector button
+        self.vector_button = Button("Vector Average")
+        self.vector_button.clicked.connect(self.on_vector_average)
+        self.vector_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        """)
+        cmd_layout.addWidget(self.vector_button)
+
+        # Full processing button
+        self.full_button = Button("Cross+Vector")
+        self.full_button.clicked.connect(self.on_full_processing)
+        self.full_button.setStyleSheet("""
+            QPushButton { 
+                background: rgba(51, 51, 51, 0.5); 
+                color: white; 
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        """)
+        cmd_layout.addWidget(self.full_button)
+
+        main_layout.addWidget(cmd_container, alignment=Qt.AlignCenter)
+        main_layout.addSpacing(0)
+
+        status_group = QGroupBox("Measurement Status")
+        status_group.setStyleSheet('''
+            QGroupBox {
+                background: rgba(0, 0, 0, 0.8); 
+                color: #fff; 
+                font-weight: bold;
+                font-size: 12px;
+                border: 2px solid #999;
+                border-radius: 5px;
+                margin-top: 5px;
+                padding-top: 5px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        ''')
+        status_group.setMinimumHeight(80)
+        status_group.setMaximumHeight(80)
+        status_group.setFixedWidth(450)
+        # Status layout
+        status_layout = QVBoxLayout()
+        # Status label
+        self.status_label = QLabel("Please load stimulus file to begin...")
+        self.status_label.setStyleSheet("""
+            QLabel { 
+               
+                color: #fff; 
+
+                font-weight: normal;
+            }
+        """)
+        self.status_label.setWordWrap(True)
+      #*  self.status_label.setMinimumHeight(80)
+       # self.status_label.setMaximumHeight(80)
+       # self.status_label.setFixedWidth(450)
+        status_layout.addWidget(self.status_label)
+        status_group.setLayout(status_layout)
+        main_layout.addWidget(status_group, alignment=Qt.AlignCenter)
+#        main_layout.addWidget(self.status_label, alignment=Qt.AlignCenter)
+
+        # Warning/Error panel
+        error_group = QGroupBox("Warnings & Errors")
+        error_group.setStyleSheet('''
+            QGroupBox {
+                background: rgba(0, 0, 0, 0.8);
+                color: #fff;
+                font-weight: bold;
+                font-size: 12px;
+                border: 2px solid #999;
+                border-radius: 5px;
+                margin-top: 5px;          /* space above frame */
+                padding-top: 0px;         /* space below title */
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        ''')
+        error_group.setMinimumHeight(110)
+        error_group.setMaximumHeight(110)
+        error_group.setFixedWidth(450)
+
+        # --- layout inside the group --------------------------------------
+        err_vbox = QVBoxLayout(error_group)
+        err_vbox.setContentsMargins(10, 5, 5, 5)
+        err_vbox.setSpacing(2)
+
+        # header row (stretch + Clear button) ------------------------------
+        header_hbox = QHBoxLayout()
+        header_hbox.addStretch()
+
+        self.clear_errors_button = Button("Clear")
+        self.clear_errors_button.clicked.connect(self.clear_warnings_errors)
+      #  self.clear_errors_button.setFixedHeight(20)
+       # self.clear_errors_button.setFixedWidth(50)
+        self.clear_errors_button.setStyleSheet("""
+            QPushButton {
+                background: rgba(51, 51, 51, 0.5);
+                color: white;
+                border: 1px solid #666;
+                border-radius: 4px;
+                padding: 2px 8px;
+                font-size: 10px;
+            }
+        """)
+
+        self.clear_errors_button.setToolTip("Clear all warnings and errors")
+        header_hbox.addWidget(self.clear_errors_button)
+
+        err_vbox.addLayout(header_hbox)          # <- first row in the group
+        err_vbox.addSpacing(0)
+
+        # scroll-area for accumulating messages -----------------------------
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: transparent;
+                width: 10px;
+            }
+            QScrollBar::handle:vertical {
+                background: #888;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #aaa;
+            }
+ 
+        """)
+        scroll.viewport().setAutoFillBackground(False)
+        self.error_label = QLabel("No warnings or errors")
+        self.error_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: white;
+                font-size: 11px;
+            }
+        """)
+        self.error_label.setWordWrap(True)
+        self.error_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+
+        # Set the label to be larger than the scroll area
+        self.error_label.setMinimumHeight(70)  # Ensure it can scroll
+        self.error_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)    
+        # put the label inside the scroll-area
+        scroll.setWidget(self.error_label)
+        scroll.setFixedHeight(70)          # visible window height
+        err_vbox.addWidget(scroll)
+
+
+        # add the new group to your main layout
+        main_layout.addWidget(error_group, alignment=Qt.AlignCenter)
+        main_layout.addSpacing(0)
+
+        # load persisted settings and apply once
+        self.app_settings = SettingsDialog.load()
+        self.apply_settings()
+
+        # Pass VLC GUI preference to message handler
+        from Qrew_common import set_vlc_gui_preference
+        set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
+        # Worker thread
+        self.measurement_worker = None
+        self.processing_worker = None
+        message_bridge.message_received.connect(self.update_status)
+        message_bridge.warning_received.connect(self.add_warning)
+        message_bridge.error_received.connect(self.add_error)
+        QTimer.singleShot(1000, self.load_existing_measurement_qualities)  # Delay to ensure REW is connected
+
+    def _rebuild_grid(self, text):
+        """Rebuild grid with proper centering and scaling"""
+        n = int(text)
+        # Store current flash state
+        was_flashing = hasattr(self, 'flash_timer') and self.flash_timer and self.flash_timer.isActive()
+        
+        # Get the container
+        parent_widget = self.grid_widget.parent()
+        parent_layout = parent_widget.layout()
+        
+        # Remove old widget
+        parent_layout.removeWidget(self.grid_widget)
+        self.grid_widget.deleteLater()
+        
+        # Create new grid widget
+        self.grid_widget = GridWidget(positions=n, current_pos=self.measurement_state['current_position'])
+        self.grid_widget.setMinimumSize(220, 160)
+        self.grid_widget.set_horizontal_stretch(1.3)
+        # Add to layout with center alignment
+        parent_layout.addWidget(self.grid_widget, alignment=Qt.AlignCenter)
+        
+        # Restore flash state if it was active
+        if was_flashing:
+            self.grid_widget.set_flash(True)
+            # Restart timer if needed
+            if not self.flash_timer.isActive():
+                self.flash_timer.start(400)
+
+    def update_grid_flash(self, flash_on):
+        """Update grid flash state"""
+        if flash_on:
+            # Start flash timer
+            if not self.flash_timer:
+                self.flash_timer = QTimer()
+                self.flash_timer.timeout.connect(self.toggle_flash)
+            self.flash_timer.start(400)  # Flash every 400ms
+            self.grid_widget.set_flash(True)
+        else:
+            # Stop flash timer
+            if self.flash_timer:
+                self.flash_timer.stop()
+            self.grid_widget.set_flash(False)
+
+    def toggle_flash(self):
+        """Toggle flash state"""
+        current_flash = self.grid_widget.flash_on
+        self.grid_widget.set_flash(not current_flash)
+
+    def update_grid_position(self, position):
+        """Update grid current position"""
+        self.grid_widget.set_current_pos(position)
+
+    def update_metrics_display(self, metrics):
+        """Update the metrics display with color-coded rating"""
+        try:
+            score = metrics.get("score", 0)
+            rating = metrics.get("rating", "Unknown")
+            measurement_uuid = metrics.get("uuid", None)
+            metrics_detail = metrics.get("detail", None)
+            # Track the measurement quality for current measurement
+            if hasattr(self, 'measurement_state') and self.measurement_state.get('running', False):
+                current_ch = self.measurement_state['channels'][max(0, self.measurement_state['channel_index'] - 1)]
+                current_pos = self.measurement_state['current_position']
+                
+                if measurement_uuid:
+                    self.measurement_qualities[(current_ch, current_pos)] = {
+                        'rating': rating,
+                        'score': score,
+                        'uuid': measurement_uuid,
+                        'detail': metrics_detail,
+                        'title': f"{current_ch}_pos{current_pos}"
+                    }
+                    print(f"Tracked quality for {current_ch}_pos{current_pos}: {rating} ({score:.1f}) UUID: {measurement_uuid}")
+                
+            # Choose color based on rating
+            if rating == "PASS":
+                color = "#00ff00"  # Green
+            elif rating == "CAUTION":
+                color = "#ffff00"  # Yellow
+            elif rating == "RETAKE":
+                color = "#ff0000"  # Red
+            else:
+                color = "#ffffff"  # White for unknown
+            
+            # Create HTML formatted text
+            metrics_html = f'<span style="color: {color}; font-size: 16px; font-weight: bold;">{rating}</span> <span style="color: #ccc; font-size: 12px;">({score:.1f})</span>'
+            
+            self.metrics_label.setText(metrics_html)
+            self.metrics_label.show()
+            
+        except Exception as e:
+            print(f"Error updating metrics display: {e}")
+
+    def update_status(self, msg):
+        """Update regular status messages (white text)"""
+        self.last_status_message = msg
+        self.status_label.setText(msg)
+        self.status_label.setStyleSheet("""
+            QLabel { 
+                color: white; 
+
+                font-weight: normal;
+            }
+        """)
+
+    def add_warning(self, warning_msg):
+        """Add a warning message (yellow text, persistent)"""
+        timestamp = time.strftime("%H:%M:%S")
+        warning_with_time = f"[{timestamp}] {warning_msg}"
+        
+        # Keep only last 3 warnings
+        self.current_warnings.append(warning_with_time)
+        if len(self.current_warnings) > 3:
+            self.current_warnings.pop(0)
+        
+        self.update_error_display()
+
+    def add_error(self, error_msg):
+        """Add an error message (red text, persistent)"""
+        timestamp = time.strftime("%H:%M:%S")
+        error_with_time = f"[{timestamp}] {error_msg}"
+        
+        # Keep only last 3 errors
+        self.current_errors.append(error_with_time)
+        if len(self.current_errors) > 3:
+            self.current_errors.pop(0)
+        
+        self.update_error_display()
+
+    def update_error_display(self):
+        """Update the warning/error display"""
+        if not self.current_warnings and not self.current_errors:
+            self.error_label.setText("No warnings or errors")
+            self.error_label.setStyleSheet("""
+                QLabel { 
+                    background: transparent;
+                    color: #fff; 
+
+                    font-size: 11px;
+                }
+            """)
+            return
+        
+        # Build display text with HTML for colors
+        display_parts = []
+        
+        # Add errors (red)
+        for error in self.current_errors:
+            display_parts.append(f'<span style="color: #ff6b6b;">{HTML_ICONS["cross"]} {error}</span>')
+        
+        # Add warnings (yellow)
+        for warning in self.current_warnings:
+            display_parts.append(f'<span style="color: #ffd93d;">{HTML_ICONS["warning"]} {warning}</span>')
+        
+        display_text = f'<br>'.join(display_parts)
+        self.error_label.setTextFormat(Qt.RichText)
+        self.error_label.setText(display_text)
+        self.error_label.setStyleSheet("""
+            QLabel { 
+                background: transparent;
+                color: white; 
+                font-size: 11px;
+            }
+        """)
+
+    def clear_warnings_errors(self):
+        """Clear all warnings and errors"""
+        self.current_warnings.clear()
+        self.current_errors.clear()  
+        self.update_error_display()
+
+    def set_background_image(self, image_path):
+        if os.path.exists(image_path):
+            pixmap = QPixmap(image_path)
+            pixmap = pixmap.scaled(500, 800, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            palette = QPalette()
+            palette.setBrush(QPalette.Background, QBrush(pixmap))
+            self.setPalette(palette)
+    
+    def clear_selections(self):
+        for checkbox in self.channel_checkboxes.values():
+            checkbox.setChecked(False)
+    
+    def load_stimulus_file(self):
+        # Get last directory from settings, default to empty string
+        last_dir = self.qsettings.value("last_stimulus_directory", "")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Stimulus WAV File",
+            last_dir,
+            "WAV Files (*.wav);;All Files (*.*)"
+        )
+        if file_path:
+            # Normalize paths for the current OS
+            Qrew_common.selected_stimulus_path = os.path.normpath(file_path)
+            Qrew_common.stimulus_dir = os.path.normpath(os.path.dirname(file_path))
+            self.qsettings.setValue("last_stimulus_directory", Qrew_common.stimulus_dir)
+            self.status_label.setText(f"Selected stimulus: {os.path.basename(file_path)}")
+    
+    def show_error_message(self, title, message):
+        """Thread-safe method to show error messages"""
+        QMessageBox.critical(self, title, message)
+    
+    def on_start(self):
+        if not Qrew_common.selected_stimulus_path:
+            QMessageBox.critical(self, "No Stimulus File", "Please load a stimulus WAV file first.")
+            return
+        
+        try:
+            num_pos = int(self.pos_selector.currentText())
+            if num_pos <= 0:
+                raise ValueError
+        except ValueError:
+            QMessageBox.critical(self, "Invalid Input", "Number of positions must be a positive integer.")
+            return
+        
+        selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
+        if not selected:
+            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            return
+
+        # Check for existing measurements and show confirmation dialog
+        measurement_count = get_measurement_count()
+        dialog = ClearMeasurementsDialog(measurement_count, self)
+        
+        if dialog.exec_() != QDialog.Accepted:
+            return  # User cancelled
+        
+        # Handle user's choice
+        if dialog.result == 'delete':
+            self.status_label.setText('Clearing existing measurements...')
+            success, count_deleted, error_msg = delete_all_measurements(status_callback=self.update_status)
+            if not success:
+                QMessageBox.critical(self, 'Delete Failed', f'Failed to delete measurements:\n{error_msg}')
+                return
+            if count_deleted > 0:
+                QMessageBox.information(self, 'Measurements Cleared', f'Successfully deleted {count_deleted} existing measurements.')
+                
+        # Reset measurement state
+        self.measurement_state.update({
+            'channels': selected,
+            'num_positions': num_pos,
+            'current_position': 0,
+            'initial_count': -1,
+            'running': True,
+            'channel_index': 0
+        })
+        
+        # Hide metrics when starting new measurement
+        self.metrics_label.hide()
+        
+        self.start_button.setEnabled(False)
+        self.status_label.setText("Starting measurement process...")
+        
+        # Show initial position dialog
+        self.show_position_dialog(0)
+    
+    def show_position_dialog(self, position):
+        dialog = PositionDialog(position, self)
+        if dialog.exec_():
+            # For repeat mode, don't reset channel_index
+            if not self.measurement_state.get('repeat_mode', False):
+                self.measurement_state['channel_index'] = 0
+            
+            if position == 0 and not self.measurement_state.get('repeat_mode', False):
+                # First time - start the worker (only for normal mode)
+                self.start_worker()
+            elif self.measurement_worker and self.measurement_worker.isRunning():
+                    self.measurement_worker.resume_after_position_dialog()
+            else:
+                # For repeat mode, just resume the measurement
+                self.start_worker()
+        else:
+            # User cancelled - stop everything
+            self.measurement_state['running'] = False
+            self.start_button.setEnabled(True)
+            if self.flash_timer:
+                self.flash_timer.stop()
+            self.grid_widget.set_flash(False)
+
+    
+    def start_worker(self):
+        self.measurement_worker = MeasurementWorker(self.measurement_state, self)
+        self.measurement_worker.status_update.connect(self.update_status)
+        self.measurement_worker.error_occurred.connect(self.show_error_message)
+        self.measurement_worker.finished.connect(self.on_measurement_finished)
+        self.measurement_worker.show_position_dialog.connect(self.show_position_dialog)
+        self.measurement_worker.grid_flash_signal.connect(self.update_grid_flash)
+        self.measurement_worker.grid_position_signal.connect(self.update_grid_position)
+        self.measurement_worker.metrics_update.connect(self.update_metrics_display)
+        self.measurement_worker.show_quality_dialog.connect(self.show_measurement_quality_dialog)  
+
+        self.measurement_worker.start()
+    
+    def on_measurement_finished(self):
+        """Called when all measurements are complete"""
+        self.start_button.setEnabled(True)
+        self.status_label.setText("Measurement process completed.")
+        if self.flash_timer:
+            self.flash_timer.stop()
+        self.grid_widget.set_flash(False)
+        if self.measurement_worker:
+            self.measurement_worker = None
+        # Show save dialog
+        self.show_save_measurements_dialog()
+
+    def show_save_measurements_dialog(self):
+        """Show dialog to save raw measurements"""
+        dialog = SaveMeasurementsDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            file_path = dialog.result_file_path
+            if file_path:
+                self.save_raw_measurements(file_path)
+
+    def save_raw_measurements(self, file_path):
+        """Save raw measurements to file"""
+        self.status_label.setText("Saving raw measurements...")
+        
+        # Disable buttons during save
+        self.start_button.setEnabled(False)
+        self.cross_button.setEnabled(False)
+        self.vector_button.setEnabled(False)
+        self.full_button.setEnabled(False)
+        
+        try:
+            success, error_msg = save_all_measurements(
+                file_path, 
+                status_callback=self.update_status
+            )
+            
+            if success:
+                self.update_status(f"Raw measurements saved successfully to: {os.path.basename(file_path)}")
+                QMessageBox.information(
+                    self, 
+                    "Save Successful", 
+                    f"Raw measurements saved to:\n{file_path}"
+                )
+            else:
+                self.update_status(f"Failed to save measurements: {error_msg}")
+                QMessageBox.critical(
+                    self, 
+                    "Save Failed", 
+                    f"Failed to save measurements:\n{error_msg}"
+                )
+                
+        except Exception as e:
+            error_msg = f"Unexpected error saving measurements: {str(e)}"
+            self.update_status(error_msg)
+            QMessageBox.critical(self, "Save Error", error_msg)
+        
+        finally:
+            # Re-enable buttons
+            self.start_button.setEnabled(True)
+            self.cross_button.setEnabled(True)
+            self.vector_button.setEnabled(True)
+            self.full_button.setEnabled(True)
+
+    def on_cross_corr_align(self):
+        """Handle cross correlation alignment button click"""
+        selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
+        if not selected:
+            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            return
+        
+        self.start_processing(selected, 'cross_corr_only')
+
+    def on_vector_average(self):
+        """Handle vector average button click"""
+        selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
+        if not selected:
+            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            return
+        
+        self.start_processing(selected, 'vector_avg_only')
+
+    def on_full_processing(self):
+        """Handle full processing (cross corr + vector avg) button click"""
+        selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
+        if not selected:
+            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            return
+        
+        self.start_processing(selected, 'full')
+
+    def start_processing(self, selected_channels, mode):
+        """Start processing workflow"""
+        # Get measurements for selected channels
+        channels_with_data = get_selected_channels_with_measurements_uuid(selected_channels)
+        
+        if not channels_with_data:
+            QMessageBox.critical(self, "No Measurements", 
+                            "No measurements found for the selected channels. Please run measurements first.")
+            return
+        # Convert to the format expected by processing worker (just UUIDs)
+        channels_with_uuids = {}
+        for channel, measurements in channels_with_data.items():
+            channels_with_uuids[channel] = [m['uuid'] for m in measurements]
+    
+        # Determine starting step based on mode
+        if mode == 'cross_corr_only':
+            start_step = 'cross_corr'
+        elif mode == 'vector_avg_only':
+            start_step = 'vector_avg'
+        else:  # 'full'
+            start_step = 'cross_corr'
+        
+        # Initialize processing state
+        self.processing_state = {
+            'channels': list(channels_with_data.keys()),
+            'channel_measurements': channels_with_data,
+            'current_step': start_step,
+            'channel_index': 0,
+            'running': True,
+            'mode': mode
+        }
+        
+        # Disable buttons during processing
+        self.cross_button.setEnabled(False)
+        self.vector_button.setEnabled(False)
+        self.full_button.setEnabled(False)
+        self.start_button.setEnabled(False)
+        
+        # Start processing worker
+        self.processing_worker = ProcessingWorker(self.processing_state)
+        self.processing_worker.status_update.connect(self.update_status)
+        self.processing_worker.error_occurred.connect(self.show_error_message)
+        self.processing_worker.finished.connect(self.on_processing_finished)
+        self.processing_worker.start()
+
+    def on_processing_finished(self):
+        """Called when processing is complete"""
+        self.cross_button.setEnabled(True)
+        self.vector_button.setEnabled(True)
+        self.full_button.setEnabled(True)
+        self.start_button.setEnabled(True)
+        self.status_label.setText("Processing completed.")
+        if hasattr(self, 'processing_worker'):
+            self.processing_worker = None
+
+    def closeEvent(self, event):
+        """Handle window close event"""
+        if self.flash_timer:
+            self.flash_timer.stop()
+        if self.measurement_worker and self.measurement_worker.isRunning():
+            self.measurement_worker.stop()
+        if hasattr(self, 'processing_worker') and self.processing_worker and self.processing_worker.isRunning():
+            self.processing_worker.stop()
+        event.accept()
+
+    def show_repeat_measurement_dialog(self):
+        """Show the repeat measurement dialog."""
+        if not self.measurement_qualities:
+            QMessageBox.information(self, 'No Measurements', 'No completed measurements available for repeat.')
+            return
+        
+        dialog = RepeatMeasurementDialog(
+            self.measurement_qualities, 
+            self.measurement_state.get('num_positions', 9), 
+            self
+        )
+        
+        if dialog.exec_() == QDialog.Accepted and dialog.result == 'proceed':
+            selected_measurements = dialog.selected_measurements
+            if selected_measurements:
+                self.handle_repeat_measurements(selected_measurements)
+
+    def handle_repeat_measurements(self, selected_measurements):
+        """Handle the repeat measurement process."""
+        # Show deletion confirmation
+        delete_dialog = DeleteSelectedMeasurementsDialog(selected_measurements, self)
+        if delete_dialog.exec_() != QDialog.Accepted:
+            return
+        
+        # Delete selected measurements
+        self.status_label.setText('Deleting selected measurements...')
+        uuid_list = [m['uuid'] for m in selected_measurements]
+        deleted_count, failed_count = delete_measurements_by_uuid(uuid_list, self.update_status)
+        
+        if failed_count > 0:
+            QMessageBox.warning(self, 'Deletion Issues', 
+                            f'Deleted {deleted_count} measurements, but {failed_count} failed to delete.')
+        
+        # Remove deleted measurements from quality tracking
+        for measurement in selected_measurements:
+            key = (measurement['channel'], measurement['position'])
+            if key in self.measurement_qualities:
+                del self.measurement_qualities[key]
+        
+        # Prepare for remeasurement
+       # channels_to_remeasure = list(set(m['channel'] for m in selected_measurements))
+        #positions_to_remeasure = list(set(m['position'] for m in selected_measurements))
+        # Prepare remeasurement pairs (channel, position) tuples
+        remeasure_pairs = [(m['channel'], m['position']) for m in selected_measurements]
+        
+        # Update measurement state for remeasurement
+        self.measurement_state.update({
+            'channels': [],
+            'num_positions': 0,
+            'current_position': 0,
+            'initial_count': -1,
+            'running': True,
+            'channel_index': 0,
+            'repeat_mode': True,
+            'remeasure_pairs': remeasure_pairs.copy(),  # Make a copy
+            'current_remeasure_pair': None
+        })
+        
+        self.start_button.setEnabled(False)
+        self.status_label.setText('Starting remeasurement process...')
+        
+        # Start with the first position to remeasure
+        #first_position = min(positions_to_remeasure)
+        #self.show_position_dialog(first_position)
+        self.start_worker()
+
+    def load_existing_measurement_qualities(self):
+        """Load quality data for existing measurements (useful when restarting the app)."""
+        try:
+            measurements, _ = get_all_measurements_with_uuid()
+            if not measurements:
+                return
+            
+            for measurement in measurements:
+                title = measurement.get('title', '')
+                uuid = measurement.get('uuid', '')
+                
+                # Parse channel and position from title
+                for channel in SPEAKER_LABELS.keys():
+                    pattern = rf'^{re.escape(channel)}_pos(\d+)$'
+                    match = re.match(pattern, title, re.IGNORECASE)
+                    if match:
+                        position = int(match.group(1))
+                        
+                        # Try to get quality metrics for this measurement
+                        try:
+                            measurement_data = get_measurement_by_uuid(uuid)
+                            distortion_data = get_measurement_distortion_by_uuid(uuid)
+                            
+                            if measurement_data and distortion_data:
+                                result = evaluate_measurement(distortion_data, measurement_data, None)
+                                if result:
+                                    self.measurement_qualities[(channel, position)] = {
+                                        'rating': result.get('rating', 'Unknown'),
+                                        'score': result.get('score', 0),
+                                        'uuid': uuid,
+                                        'detail': result.get('detail', None),
+                                        'title': title
+                                    }
+                        except Exception as e:
+                            print(f"Could not evaluate quality for {title}: {e}")
+                        break
+            
+            print(f"Loaded quality data for {len(self.measurement_qualities)} existing measurements")
+            
+        except Exception as e:
+            print(f"Error loading existing measurement qualities: {e}")
+
+    def show_measurement_quality_dialog(self, measurement_info):
+        """Show quality dialog and handle user choice"""
+        dialog = MeasurementQualityDialog(measurement_info, self)
+        result = dialog.exec_()
+        
+        if result == 1:  # Remeasure
+            # Delete the current measurement
+            uuid = measurement_info['uuid']
+            delete_measurement_by_uuid(uuid, self.update_status)
+            
+            # Remove from quality tracking
+            key = (measurement_info['channel'], measurement_info['position'])
+            if key in self.measurement_qualities:
+                del self.measurement_qualities[key]
+            
+            # Tell worker to remeasure
+            if self.measurement_worker:
+                self.measurement_worker.handle_quality_dialog_response('remeasure')
+                    
+        elif result == 2:  # Continue
+            # Tell worker to remeasure
+            if self.measurement_worker:
+                self.measurement_worker.handle_quality_dialog_response('continue')
+                
+        else:  # Stop (0)
+            # Stop the measurement process
+            if self.measurement_worker:
+                self.measurement_worker.handle_quality_dialog_response('stop')
+
+    def open_settings_dialog(self):
+        current = getattr(self, "app_settings", {})
+        dlg = SettingsDialog(current, self)
+        if dlg.exec_():
+            self.app_settings = dlg.values()
+            SettingsDialog.save(self.app_settings)
+            self.apply_settings()
+
+    def apply_settings(self):
+        """Apply settings after load / save."""
+        # Example behaviour:
+        if self.app_settings.get("show_tooltips", True):
+            QToolTip.setFont(QFont("SansSerif", 10))
+        else:
+            QToolTip.hideText()
+
+        # Update VLC GUI preference in message handler
+        from Qrew_common import set_vlc_gui_preference
+        set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
+
+def wait_for_rew_qt():
+    while not check_rew_connection():
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setWindowTitle("REW Not Detected")
+        msg_box.setText("REW API not responding.\n\nPlease start REW and ensure the server is enabled (Preferences → API → Start Server).")
+        msg_box.setStandardButtons(QMessageBox.Retry | QMessageBox.Cancel)
+        
+        if msg_box.exec_() == QMessageBox.Cancel:
+            sys.exit(1)
+
+def initialize_rew_subscriptions():
+    """Initialize all REW subscriptions"""
+    print("🔄 Initializing REW subscriptions...")
+    
+    # Subscribe to status updates
+    subscribe_to_rew_status()
+    
+    # Subscribe to warnings
+    subscribe_to_rew_warnings()
+    
+    # Subscribe to errors  
+    subscribe_to_rew_errors()
+    
+    # Check initial health
+    health = check_rew_health()
+    if health['healthy']:
+        print("✅ REW appears healthy")
+    else:
+        print(f"⚠️ REW health check shows issues: {health}")
+
+if __name__ == "__main__":
+    # Start Flask in a background thread
+    flask_thread = Thread(target=run_flask_server, daemon=True)
+    flask_thread.start()
+    
+    time.sleep(1)
+    
+    # Create Qt application
+    app = QApplication(sys.argv)
+    
+    # Check REW connection
+    wait_for_rew_qt()
+    
+    # Initialize all subscriptions
+    initialize_rew_subscriptions()
+    
+    # Create and show main window
+    window = MainWindow()
+    window.show()
+    
+    sys.exit(app.exec_())
