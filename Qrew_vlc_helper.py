@@ -1,6 +1,4 @@
 # Qrew_vlc_helper.py
-
-import vlc
 import time
 import platform
 import subprocess
@@ -10,6 +8,11 @@ import re
 import threading
 from pathlib import Path
 import Qrew_common
+
+try:
+    import vlc          # python-vlc
+except ImportError:
+    vlc = None          # optional
 
 class VLCPlayer:
     """Non-blocking VLC player that doesn't interfere with messaging/coordination"""
@@ -48,6 +51,9 @@ def find_sweep_file(channel):
     # Custom pattern that treats common separators as boundaries
     # (?:^|[^A-Za-z0-9]) = start of string OR non-alphanumeric character
     # (?:[^A-Za-z0-9]|$) = non-alphanumeric character OR end of string
+    if 'SW' in channel:
+        channel = 'LFE'
+    
     pattern = r'(?:^|[^A-Za-z0-9])' + re.escape(channel) + r'(?:[^A-Za-z0-9]|$)'
     
     for fname in os.listdir(Qrew_common.stimulus_dir):

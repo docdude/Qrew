@@ -1,13 +1,14 @@
 # Qrew_message_handlers.py
-import requests
+import numpy as np
+import time
 from flask import Flask, request, jsonify
 from collections import deque
 from threading import Event, Thread
-from PyQt5.QtCore import QObject, pyqtSignal, QCoreApplication
+from PyQt5.QtCore import QObject, pyqtSignal
 from Qrew_api_helper import get_last_error, get_last_warning
 
-from Qrew_vlc_helper import play_file, play_file_old, find_sweep_file
-from Qrew_common import show_vlc_gui
+from Qrew_vlc_helper_v2 import play_file, play_file_old, find_sweep_file
+import Qrew_common 
 
 status_log = deque(maxlen=100)
 
@@ -15,7 +16,8 @@ class MessageBridge(QObject):
     message_received = pyqtSignal(str)  # Regular status messages
     warning_received = pyqtSignal(str)  # Warning messages  
     error_received = pyqtSignal(str)    # Error messages
-    
+    rta_distortion_received = pyqtSignal(dict)  # New signal for RTA data
+
     def emit_message(self, msg):
         print(f"MessageBridge: Emitting message: {msg}")
         self.message_received.emit(msg)
@@ -92,6 +94,101 @@ class MeasurementCoordinator:
 # Global coordinator instance
 coordinator = MeasurementCoordinator()
 
+class RTAVerificationCoordinator:
+    def __init__(self):
+        self.collecting = False
+        self.samples = []
+        self.start_time = None
+        self.target_duration = 10  # seconds
+        self.min_samples = 20
+        
+    def start_collection(self, duration=10):
+        """Start collecting RTA samples"""
+        self.collecting = True
+        self.samples = []
+        self.start_time = time.time()
+        self.target_duration = duration
+        print(f"🎯 Starting RTA verification collection for {duration}s")
+        
+    def add_sample(self, rta_data):
+        """Add RTA sample if collecting"""
+        if not self.collecting:
+            return
+            
+        # Skip samples with too few processed samples (settling)
+        if rta_data.get('samples_processed', 0) < 50000:
+            return
+            
+        elapsed = time.time() - self.start_time
+        if elapsed <= self.target_duration:
+            self.samples.append({
+                'elapsed_time': elapsed,
+                **rta_data
+            })
+            print(f"📊 RTA sample {len(self.samples)}: THD={rta_data.get('thd_percent', 0):.3f}%")
+        # Auto-stop when duration reached AND we have enough samples
+        if elapsed >= self.target_duration and len(self.samples) >= self.min_samples:
+            print(f"🏁 Auto-stopping RTA: {elapsed:.1f}s elapsed, {len(self.samples)} samples")
+            self.stop_collection()
+
+    def stop_collection(self):
+        """Stop collecting and return results"""
+        if not self.collecting:
+            return None
+            
+        self.collecting = False
+        print(f"🏁 RTA collection complete: {len(self.samples)} samples")
+        return self.analyze_samples()
+    
+    def analyze_samples(self):
+        """Analyze collected RTA samples"""
+        print(f"🔍 Analyzing {len(self.samples)} total samples")
+
+        if len(self.samples) < self.min_samples:
+            print(f"⚠️ Insufficient RTA samples: {len(self.samples)} < {self.min_samples}")
+            return None
+            
+        # Skip first 25% of samples (settling time)
+        stable_start = len(self.samples) // 4
+        stable_samples = self.samples[stable_start:]
+        print(f"📈 Using {len(stable_samples)} stable samples (skipped first {stable_start})")
+
+        if not stable_samples:
+            return None
+        
+        # Extract metrics
+        thd_values = [s['thd_percent'] for s in stable_samples]
+        thd_plus_n_values = [s['thd_plus_n_percent'] for s in stable_samples]
+        snr_values = [s['snr_db'] for s in stable_samples]
+        enob_values = [s['enob'] for s in stable_samples]
+        imd_values = [s['imd_percent'] for s in stable_samples]
+        
+        return {
+            'total_samples': len(self.samples),
+            'stable_samples': len(stable_samples),
+            'duration': self.samples[-1]['elapsed_time'] if self.samples else 0,
+            'thd_mean': np.mean(thd_values),
+            'thd_max': np.max(thd_values),
+            'thd_std': np.std(thd_values),
+            'thd_plus_n_mean': np.mean(thd_plus_n_values),
+            'snr_mean': np.mean(snr_values),
+            'snr_min': np.min(snr_values),
+            'enob_mean': np.mean(enob_values),
+            'imd_mean': np.mean(imd_values),
+            'stability_good': np.std(thd_values) < 0.05,  # THD variation < 0.05%
+            'signal_quality': 'excellent' if np.mean(snr_values) > 80 else 'good' if np.mean(snr_values) > 60 else 'poor'
+        }
+
+    def is_collecting(self):
+        """Check if currently collecting samples"""
+        return self.collecting
+    
+    def get_sample_count(self):
+        """Get current sample count"""
+        return len(self.samples)
+
+# Global RTA coordinator
+rta_coordinator = RTAVerificationCoordinator()
 
 # Flask server code 
 app = Flask(__name__)
@@ -161,7 +258,7 @@ def handle_status():
             sweep_file = find_sweep_file(ch)
             if sweep_file:
                 print(f"Playing sweep file for {ch}: {sweep_file}")
-                play_file(sweep_file, show_interface=show_vlc_gui)
+                play_file(sweep_file, show_interface=Qrew_common.show_vlc_gui)
                 message_bridge.emit_message(f"Playing sweep for {ch}")
 
 
@@ -222,6 +319,48 @@ def show_last_status():
     </html>
     '''
 
+@app.route('/rta-distortion', methods=['POST'])
+def handle_rta_distortion():
+    """Handle RTA distortion subscription updates"""
+    try:
+        rta_data = request.json
+        if not rta_data:
+            return '', 400
+        #print(rta_data)
+        # Process RTA data
+        if isinstance(rta_data, list) and len(rta_data) > 0:
+            # Take first channel if stereo
+            distortion_data = rta_data[0]
+        else:
+            distortion_data = rta_data
+        
+        # Extract key metrics
+        processed_data = {
+            'timestamp': distortion_data.get('nanotime', 0),
+            'samples_processed': distortion_data.get('totalSamplesProcessed', 0),
+            'fundamental_freq': distortion_data.get('fundamentalFrequency', 0),
+            'fundamental_dbfs': distortion_data.get('fundamentaldBFS', 0),
+            'thd_percent': distortion_data.get('thd', {}).get('value', 0),
+            'thd_plus_n_percent': distortion_data.get('thdPlusN', {}).get('value', 0),
+            'snr_db': distortion_data.get('snrdB', 0),
+            'enob': distortion_data.get('enob', 0),
+            'imd_percent': distortion_data.get('imd', {}).get('value', 0),
+            'gain_db': distortion_data.get('gaindB', 0),
+            'harmonics': distortion_data.get('harmonics', []),
+            'coherent_averaging': distortion_data.get('coherentAveraging', False),
+            'averages': distortion_data.get('averages', 0)
+        }
+        
+        # Send to Qt interface
+        message_bridge.rta_distortion_received.emit(processed_data)
+        
+        print(f"RTA Update: THD={processed_data['thd_percent']:.3f}%, SNR={processed_data['snr_db']:.1f}dB, ENOB={processed_data['enob']:.1f}")
+        
+        return '', 200
+        
+    except Exception as e:
+        print(f"Error handling RTA distortion: {e}")
+        return '', 500
 
 @app.route('/rew-warnings', methods=['POST'])
 def handle_warnings():

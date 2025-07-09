@@ -7,13 +7,13 @@ import sys
 import time
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
-                            QPushButton, QLineEdit, QCheckBox, QGridLayout,
+                            QCheckBox, QGridLayout,
                             QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog,
-                            QDialog, QSizePolicy, QComboBox, QScrollArea, QGroupBox, QFrame, QToolButton, QStyle, QToolTip)
+                            QDialog, QSizePolicy, QComboBox, QScrollArea, QGroupBox, QFrame, QToolButton, QToolTip)
 
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QSettings, QEvent, QSize
-from PyQt5.QtGui import QPixmap, QPalette, QBrush, QColor, QFont, QIcon
+from PyQt5.QtCore import Qt, QTimer, QSettings, QSize
+from PyQt5.QtGui import QPixmap, QPalette, QBrush, QColor, QFont, QIcon, QPainter
 import platform
 from threading import Thread
 from Qrew_common import SPEAKER_LABELS
@@ -21,9 +21,10 @@ import Qrew_common
 
 from Qrew_api_helper import (get_measurement_count, get_measurement_by_uuid, get_all_measurements_with_uuid, get_selected_channels_with_measurements_uuid, get_measurement_distortion_by_uuid,
                              save_all_measurements, delete_all_measurements, delete_measurement_by_uuid, delete_measurements_by_uuid,
-                             check_rew_connection, check_rew_health, subscribe_to_rew_status, subscribe_to_rew_warnings, subscribe_to_rew_errors)
+                             check_rew_connection, initialize_rew_subscriptions)
 
 from Qrew_measurement_metrics import evaluate_measurement
+from Qrew_message_handlers import rta_coordinator
 
 from Qrew_workers import MeasurementWorker, ProcessingWorker
 from Qrew_styles import tint, HTML_ICONS
@@ -33,7 +34,8 @@ from Qrew_gridwidget import GridWidget
 
 from Qrew_message_handlers import run_flask_server, message_bridge
 
-from Qrew_dialogs import SettingsDialog, PositionDialog, MeasurementQualityDialog, ClearMeasurementsDialog, SaveMeasurementsDialog, RepeatMeasurementDialog, DeleteSelectedMeasurementsDialog
+from Qrew_dialogs import (SettingsDialog, PositionDialog, MeasurementQualityDialog, ClearMeasurementsDialog, SaveMeasurementsDialog,
+                           RepeatMeasurementDialog, DeleteSelectedMeasurementsDialog, REWConnectionDialog, get_speaker_configs)
 
 # Force Windows to use IPv4 for all requests
 if platform.system() == "Windows":
@@ -71,7 +73,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         # Set background image
-        self.set_background_image("banner_500x680.png")
+        self.set_background_image_opaque("banner_500x680.png", opacity=0.3)
         
         # Main layout
         main_layout = QVBoxLayout(central_widget)
@@ -117,9 +119,9 @@ class MainWindow(QMainWindow):
         channel_header_layout.addWidget(self.settings_btn, 0, Qt.AlignLeft)
                 
         # Channel selection section
-        channel_label = QLabel("Select Speaker Channels:")
-        channel_label.setStyleSheet("QLabel { color: white; background: transparent; padding: 0px 0px 0px 20px; text-align: left; }")
-        channel_header_layout.addWidget(channel_label)
+        self.channel_label = QLabel("Select Speaker Channels (Manual Select):")
+        self.channel_label.setStyleSheet("QLabel { color: white; background: transparent; padding: 0px 0px 0px 20px; text-align: left; }")
+        channel_header_layout.addWidget(self.channel_label)
         channel_header_layout.addStretch()
 
         # Clear button
@@ -549,6 +551,21 @@ class MainWindow(QMainWindow):
         message_bridge.error_received.connect(self.add_error)
         QTimer.singleShot(1000, self.load_existing_measurement_qualities)  # Delay to ensure REW is connected
 
+    def _set_channel_header(self, cfg_name: str):
+        """Update the header to show current speaker configuration."""
+        if not cfg_name or cfg_name.startswith("Manual"):
+            suffix = f" (Manual Select)"
+        else:
+            suffix = f" ({cfg_name})"
+        self.channel_label.setText(f"Select Speaker Channels{suffix}:")
+
+    def apply_speaker_preset(self, label_list):
+        for cb in self.channel_checkboxes.values():
+            cb.setChecked(False)
+        for lbl in label_list:
+            if lbl in self.channel_checkboxes:
+                self.channel_checkboxes[lbl].setChecked(True)
+
     def _rebuild_grid(self, text):
         """Rebuild grid with proper centering and scaling"""
         n = int(text)
@@ -642,6 +659,24 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error updating metrics display: {e}")
 
+
+    def update_quality_entry(self, result: dict):
+        """
+        Update self.measurement_qualities for (channel, position)
+        with the score/rating of the *new* measurement.
+        """
+        channel   = result['channel']     # or however you encode it
+        position  = result['position']
+        key       = (channel, position)
+
+        # overwrite / create
+        self.measurement_qualities[key] = {
+            "rating": result['rating'],
+            "score" : result['score'],
+            "detail": result['detail'],
+            "uuid"  : result['uuid'],
+        }
+
     def update_status(self, msg):
         """Update regular status messages (white text)"""
         self.last_status_message = msg
@@ -727,11 +762,47 @@ class MainWindow(QMainWindow):
             palette = QPalette()
             palette.setBrush(QPalette.Background, QBrush(pixmap))
             self.setPalette(palette)
-    
+
+
+    def set_background_image_opaque(self, image_path, opacity=0.35):
+        """
+        Set a semi-transparent background image.
+        `opacity` = 0.0 (invisible) … 1.0 (full strength)
+        """
+        if not (0.0 <= opacity <= 1.0):
+            raise ValueError("opacity must be 0.0 – 1.0")
+
+        if not os.path.exists(image_path):
+            return
+
+        # 1) load & scale
+        pix = QPixmap(image_path).scaled(
+            500, 800,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation
+        )
+
+        # 2) paint it onto a transparent canvas with the desired alpha
+        result = QPixmap(pix.size())
+        result.fill(Qt.transparent)              # RGBA buffer
+        painter = QPainter(result)
+        painter.setOpacity(opacity)              # 0-1 float
+        painter.drawPixmap(0, 0, pix)
+        painter.end()
+
+        # 3) install as window background
+        pal = self.palette()
+        pal.setBrush(QPalette.Window, QBrush(result))
+        self.setPalette(pal)
+        self.setAutoFillBackground(True)         # palette actually used
+
     def clear_selections(self):
         for checkbox in self.channel_checkboxes.values():
             checkbox.setChecked(False)
-    
+        self.channel_label.setText(f"Select Speaker Channels (Manual Select):")
+        self.app_settings['speaker_config'] = 'Manual Select'
+        SettingsDialog.save(self.app_settings)
+
     def load_stimulus_file(self):
         # Get last directory from settings, default to empty string
         last_dir = self.qsettings.value("last_stimulus_directory", "")
@@ -762,9 +833,13 @@ class MainWindow(QMainWindow):
             if num_pos <= 0:
                 raise ValueError
         except ValueError:
-            QMessageBox.critical(self, "Invalid Input", "Number of positions must be a positive integer.")
-            return
+                QMessageBox.critical(self, "Invalid Input",
+                             "Select 1 – 9 microphone positions.")            
+                return
         
+        self.last_valid_positions = num_pos
+
+                
         selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
         if not selected:
             QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
@@ -794,15 +869,21 @@ class MainWindow(QMainWindow):
             'current_position': 0,
             'initial_count': -1,
             'running': True,
-            'channel_index': 0
+            'channel_index': 0,
+            'repeat_mode'     : False,          # clean slate
+
         })
         
         # Hide metrics when starting new measurement
         self.metrics_label.hide()
+        self.retake_pairs = []                 # clear any stale repeat list
+
         
         self.start_button.setEnabled(False)
         self.status_label.setText("Starting measurement process...")
-        
+        print("DEBUG channels :", self.measurement_state['channels'])
+        print("DEBUG positions:", self.last_valid_positions)
+
         # Show initial position dialog
         self.show_position_dialog(0)
     
@@ -839,6 +920,7 @@ class MainWindow(QMainWindow):
         self.measurement_worker.grid_flash_signal.connect(self.update_grid_flash)
         self.measurement_worker.grid_position_signal.connect(self.update_grid_position)
         self.measurement_worker.metrics_update.connect(self.update_metrics_display)
+        self.measurement_worker.metrics_update.connect(self.update_quality_entry)
         self.measurement_worker.show_quality_dialog.connect(self.show_measurement_quality_dialog)  
 
         self.measurement_worker.start()
@@ -1000,13 +1082,17 @@ class MainWindow(QMainWindow):
 
     def show_repeat_measurement_dialog(self):
         """Show the repeat measurement dialog."""
+        print("DEBUG channels :", self.measurement_state['channels'])
+        print("DEBUG positions:", self.last_valid_positions)
+
         if not self.measurement_qualities:
             QMessageBox.information(self, 'No Measurements', 'No completed measurements available for repeat.')
             return
         
         dialog = RepeatMeasurementDialog(
             self.measurement_qualities, 
-            self.measurement_state.get('num_positions', 9), 
+            #self.measurement_state.get('num_positions', 9), 
+            self.last_valid_positions,
             self
         )
         
@@ -1041,7 +1127,7 @@ class MainWindow(QMainWindow):
        # channels_to_remeasure = list(set(m['channel'] for m in selected_measurements))
         #positions_to_remeasure = list(set(m['position'] for m in selected_measurements))
         # Prepare remeasurement pairs (channel, position) tuples
-        remeasure_pairs = [(m['channel'], m['position']) for m in selected_measurements]
+        remeasure_pairs = [(measurements['channel'], measurements['position']) for measurements in selected_measurements]
         
         # Update measurement state for remeasurement
         self.measurement_state.update({
@@ -1053,7 +1139,9 @@ class MainWindow(QMainWindow):
             'channel_index': 0,
             'repeat_mode': True,
             'remeasure_pairs': remeasure_pairs.copy(),  # Make a copy
-            'current_remeasure_pair': None
+            'current_remeasure_pair': None,
+            'pair_completed': False,
+            're_idx': 0
         })
         
         self.start_button.setEnabled(False)
@@ -1145,16 +1233,24 @@ class MainWindow(QMainWindow):
 
     def apply_settings(self):
         """Apply settings after load / save."""
-        # Example behaviour:
         if self.app_settings.get("show_tooltips", True):
-            QToolTip.setFont(QFont("SansSerif", 10))
+            QToolTip.setFont(QFont("Arial", 10))
         else:
             QToolTip.hideText()
+        cfg_name = self.app_settings.get("speaker_config",
+                                        "Manual Select")
+        self._set_channel_header(cfg_name)
 
-        # Update VLC GUI preference in message handler
-        from Qrew_common import set_vlc_gui_preference
+        cfg_map  = get_speaker_configs()
+        if cfg_name in cfg_map and cfg_map[cfg_name]:
+            wanted = set(cfg_map[cfg_name])
+            for lbl, cb in self.channel_checkboxes.items():
+                cb.setChecked(lbl in wanted)
+        # Update preferences in message handler and vlc helper
+        from Qrew_common import set_vlc_gui_preference, set_vlc_backend
         set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
-
+        set_vlc_backend(self.app_settings.get('vlc_backend', 'auto'))
+"""
 def wait_for_rew_qt():
     while not check_rew_connection():
         msg_box = QMessageBox()
@@ -1165,26 +1261,17 @@ def wait_for_rew_qt():
         
         if msg_box.exec_() == QMessageBox.Cancel:
             sys.exit(1)
+"""
 
-def initialize_rew_subscriptions():
-    """Initialize all REW subscriptions"""
-    print("🔄 Initializing REW subscriptions...")
-    
-    # Subscribe to status updates
-    subscribe_to_rew_status()
-    
-    # Subscribe to warnings
-    subscribe_to_rew_warnings()
-    
-    # Subscribe to errors  
-    subscribe_to_rew_errors()
-    
-    # Check initial health
-    health = check_rew_health()
-    if health['healthy']:
-        print("✅ REW appears healthy")
-    else:
-        print(f"⚠️ REW health check shows issues: {health}")
+def wait_for_rew_qt():
+    """Wait for REW connection using custom dialog"""
+    while not check_rew_connection():
+        dialog = REWConnectionDialog()
+        result = dialog.exec_()
+        
+        if result == 0:  # Exit button clicked
+            sys.exit(1)
+        # If result == 1 (Retry), the while loop will continue and check again
 
 if __name__ == "__main__":
     # Start Flask in a background thread

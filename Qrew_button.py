@@ -19,8 +19,8 @@ class Main(QtWidgets.QWidget):
 
 
 class Button(QtWidgets.QPushButton):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, text='', parent=None):
+        super().__init__(text, parent)
         self.shadow = QtWidgets.QGraphicsDropShadowEffect()
         self.setGraphicsEffect(self.shadow)
         self.tm = QtCore.QBasicTimer()
@@ -36,15 +36,15 @@ class Button(QtWidgets.QPushButton):
         self.maxExpand = 4 # expanding size - #optional
         self.init_s_color = "#3F3F3F" #optional
         self.end_s_color = "#FFFF33"  #optional
-        self.garding_s_seq = self.gradeColor(c1=self.init_s_color, 
+        self.grading_s_seq = self.gradeColor(c1=self.init_s_color, 
 									        c2=self.end_s_color, 
 									        steps=self.maxExpand)
         #button color grading.
         self.grade = 0
-        self.maxGrade=15 # gradding size - #optional
+        self.maxGrade=15 # grading size - #optional
         self.init_bg_color = "lightgrey"   #optional
         self.end_bg_color = "darkgrey"     #optional
-        self.gradding_bg_seq = self.gradeColor( c1=self.init_bg_color, 
+        self.grading_bg_seq = self.gradeColor( c1=self.init_bg_color, 
 									        	c2=self.end_bg_color, 
 									        	steps=self.maxGrade)
 
@@ -68,15 +68,15 @@ class Button(QtWidgets.QPushButton):
         
         if self.mouse == 'on' and self.grade < self.maxGrade:
             self.grade += 1
-            self.changeColor(color=self.gradding_bg_seq[self.grade-1])
+            self.changeColor(color=self.grading_bg_seq[self.grade-1])
         
         elif self.mouse == 'off' and self.grade > 0:
-            self.changeColor(color=self.gradding_bg_seq[self.grade-1])
+            self.changeColor(color=self.grading_bg_seq[self.grade-1])
             self.grade -= 1
 
         if self.mouse == 'on' and self.expand < self.maxExpand:
             self.expand += 1
-            self.shadow.setColor(QtGui.QColor(self.garding_s_seq[self.expand-1]))
+            self.shadow.setColor(QtGui.QColor(self.grading_s_seq[self.expand-1]))
             self.setGeometry(self.x()-1, int(self.y()-1), self.width()+2, self.height()+2)
         
         elif self.mouse == 'off' and  self.expand > 0:

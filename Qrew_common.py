@@ -34,42 +34,74 @@ SPEAKER_LABELS = {
     "SW4": "Subwoofer 4"
 }
 
-# HTML Icons for UI
-HTML_ICONS = {
-    'warning': '&#9888;',        # ⚠️
-    'check': '&#10004;',         # ✓
-    'cross': '&#10060;',         # ❌
-    'circle_red': '&#11044;',    # ⭕ (colored via CSS)
-    'circle_green': '&#11044;',  # ⭕ (colored via CSS)
-    'circle_yellow': '&#11044;', # ⭕ (colored via CSS)
-    'info': '&#8505;',           # ℹ️
-    'star': '&#9733;',           # ★
-    'bullet': '&#8226;',         # •
-    'arrow_right': '&#8594;',    # →
-    'arrow_up': '&#8593;',       # ↑
-    'arrow_down': '&#8595;',     # ↓
-    'gear': '&#9881;',           # ⚙️
-    'home': '&#8962;',           # ⌂
-    'play': '&#9654;',           # ▶
-    'stop': '&#9632;',           # ■
-    'pause': '&#9208;',          # ⏸
-}
+# Qrew_dialogs.py  – add/replace this block
+# ----------------------------------------------------------
+SPEAKER_CONFIGS = {
+    # ───── basic ─────
+    "Manual Select": [],
+    "Stereo 2.0":        ["FL", "FR"],
+    "Stereo 2.1":        ["FL", "FR", "SW1"],
+    "3.0 LCR":           ["FL", "FR", "C"],
+    "3.1":               ["FL", "FR", "C", "SW1"],
+    "Quadraphonic 4.0":  ["FL", "FR", "SLA", "SRA"],
+    "4.1":               ["FL", "FR", "SLA", "SRA", "SW1"],
 
+    # ───── Dolby Surround beds ─────
+    "5.0":               ["FL", "FR", "C", "SLA", "SRA"],
+    "5.1":               ["FL", "FR", "C", "SW1", "SLA", "SRA"],
+    "6.1 (EX / DTS-ES)": ["FL", "FR", "C", "SW1", "SLA", "SRA", "SBL"],   # rear-centre → SBL
+    "7.1":               ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                          "SBL", "SBR"],
+
+    # ───── Dolby Atmos Home ─────
+    "5.1.2 Atmos":       ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                          "TFL", "TFR"],
+    "5.1.4 Atmos":       ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                          "TFL", "TFR", "TRL", "TRR"],
+    "7.1.2 Atmos":       ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                          "SBL", "SBR", "TFL", "TFR"],
+    "7.1.4 Atmos":       ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                          "SBL", "SBR", "TFL", "TFR", "TRL", "TRR"],
+    "7.1.6 Atmos":       ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                          "SBL", "SBR",
+                          "TFL", "TFR", "TML", "TMR", "TRL", "TRR"],
+    "9.1.6 Atmos (wides)": ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                            "SBL", "SBR", "FWL", "FWR",
+                            "TFL", "TFR", "TML", "TMR", "TRL", "TRR"],
+
+    # ───── Auro-3D (13-strain) ─────
+    "Auro-3D 9.1":  ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                     "FHL", "FHR", "SHL", "SHR"],
+    "Auro-3D 10.1": ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                     "FHL", "FHR", "SHL", "SHR", "TML"],      # VOG ≈ TML
+    "Auro-3D 11.1": ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                     "FHL", "FHR", "SHL", "SHR", "TFL", "TFR"],  # uses front-tops for CH pair
+    "Auro-3D 13.1": ["FL", "FR", "C", "SW1", "SLA", "SRA",
+                     "SBL", "SBR",
+                     "FHL", "FHR", "SHL", "SHR", "TML"],      # rear heights ≈ SBL/SBR
+}
+# ----------------------------------------------------------
 
 REW_API_BASE_URL = "http://127.0.0.1:4735"
 WAV_STIMULUS_FILENAME = "1MMeasSweep_0_to_24000_-12_dBFS_48k_Float_L_refR.wav"
 
-
-# Global variables 
-global selected_stimulus_path
-global stimulus_dir
-
+# Global variables
 selected_stimulus_path = None
 stimulus_dir = None
 show_vlc_gui = False 
+vlc_backend = 'auto'  # 'auto', 'libvlc', 'subprocess'
 
 def set_vlc_gui_preference(show_gui):
     """Set the VLC GUI preference from main app"""
     global show_vlc_gui
     show_vlc_gui = show_gui
 
+
+
+def set_vlc_backend(backend):
+    """Set the VLC backend preference"""
+    global vlc_backend
+    if backend in ['auto', 'libvlc', 'subprocess']:
+        vlc_backend = backend
+    else:
+        print(f"Warning: Invalid VLC backend '{backend}', keeping '{vlc_backend}'")

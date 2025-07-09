@@ -34,9 +34,9 @@ class MeasurementWorker(QThread):
         self.check_timer = None  # Add timer reference
 
     def run(self):
-        self.continue_measurement()
-        self.exec_()
-       
+        QTimer.singleShot(0, self.continue_measurement)  
+        super().run()                                    
+
     def continue_measurement(self):
         if not self.running:
             return
@@ -52,9 +52,7 @@ class MeasurementWorker(QThread):
             _, count = get_all_measurements()
             if count == -1:
                 self.status_update.emit("Failed to connect to REW API.")
-                state['running'] = False
-                self.finished.emit()
-                self.quit()
+                self.stop_and_finish()
                 return
             state['initial_count'] = count
         
@@ -70,10 +68,7 @@ class MeasurementWorker(QThread):
                 self.show_position_dialog.emit(state['current_position'])
             else:
                 self.status_update.emit("All samples complete!")
-                state['running'] = False
-                self.grid_flash_signal.emit(False)  # Turn off flash
-                self.finished.emit()
-                self.quit()
+                self.stop_and_finish()
             return
         
         # Process current channel
@@ -105,62 +100,63 @@ class MeasurementWorker(QThread):
         self.start_completion_check()
 
     def handle_repeat_mode(self):
-        """Handle repeat measurement mode logic"""
+        """
+        Walk through state['remeasure_pairs'] without mutating the list.
+        A pointer 're_idx' (index) tracks progress so the list remains
+        available for dialogs and logging.
+        """
         state = self.measurement_state
-        
-        # Check if we have more pairs to remeasure
-        if not state.get('remeasure_pairs'):
+        pairs = state.get('remeasure_pairs', [])
+
+        # ── initialise pointer once ──
+        if 're_idx' not in state:
+            state['re_idx'] = 0
+
+        # ── done? ──
+        if state['re_idx'] >= len(pairs):
             self.status_update.emit("All remeasurements complete!")
-            state['running'] = False
-            self.grid_flash_signal.emit(False)
-            self.finished.emit()
-            self.quit()
+            self.stop_and_finish()
             return
-        
-        # If we don't have a current pair or we finished the current one, get the next
-        if not state.get('current_remeasure_pair') or state.get('pair_completed', False):
-            next_pair = state['remeasure_pairs'].pop(0)
-            channel, position = next_pair
-            
-            state['current_remeasure_pair'] = next_pair
-            state['channels'] = [channel]
+
+        # ── if first time for this pair, prepare and show position dialog ──
+        if (not state.get('current_remeasure_pair')
+                or state.get('pair_completed', False)):
+
+            channel, position = pairs[state['re_idx']]
+            state['current_remeasure_pair'] = (channel, position)
+            state['channels']       = [channel]
             state['current_position'] = position
-            state['channel_index'] = 0
+            state['channel_index']  = 0
             state['pair_completed'] = False
 
-            # Stop any current flashing before showing position dialog
-            self.grid_flash_signal.emit(False)
-            # Show position dialog for this measurement
-            self.show_position_dialog.emit(position)
-            return
-        
-        # Continue with current measurement
+            self.grid_flash_signal.emit(False)          # stop any previous flash
+            self.show_position_dialog.emit(position)    # user moves mic
+            return                                      # wait for dialog
+
+        # ── continue measuring current pair ──
         channel, position = state['current_remeasure_pair']
         sample_name = f"{channel}_pos{position}"
-        
-        # Update grid to show current position and start flash
+
         self.grid_position_signal.emit(position)
         self.grid_flash_signal.emit(True)
-        
-        retry_msg = f" (Retry {self.current_retry + 1}/{self.max_retries})" if self.current_retry > 0 else ""
+
+        retry_msg = (f" (Retry {self.current_retry + 1}/{self.max_retries})"
+                    if self.current_retry else "")
         self.status_update.emit(f"Remeasuring {sample_name}{retry_msg}...")
-        
-        # Reset coordinator and start measurement
+
         coordinator.reset(channel, position)
-        
-        success, error_msg = start_capture(
-            channel, position, 
+        success, err = start_capture(
+            channel, position,
             status_callback=self.status_update.emit,
             error_callback=self.error_occurred.emit
         )
-        
+
         if not success:
             self.status_update.emit(f"Failed to start capture for {sample_name}")
             self.handle_measurement_failure("Failed to start capture")
             return
 
-        # Start checking for completion
-        self.start_completion_check()
+        self.start_completion_check()   # poll coordinator
 
     def check_measurement_quality_and_pause(self):
         """Check if measurement quality requires user intervention"""
@@ -222,13 +218,7 @@ class MeasurementWorker(QThread):
             QTimer.singleShot(500, self.continue_measurement)
         elif action == 'stop':
             # Stop the measurement process
-            state['running'] = False
-           # self.start_button.setEnabled(True)
-        #    if self.flash_timer:
-         #       self.flash_timer.stop()
-            self.grid_flash_signal.emit(False)  
-            self.finished.emit()
-            self.quit()
+            self.stop_and_finish()
 
     def start_completion_check(self):
         """Start checking for measurement completion"""
@@ -295,7 +285,8 @@ class MeasurementWorker(QThread):
             if not thd_json or not ir_json:
                 self.status_update.emit("Incomplete distortion data for evaluation.")
                 return
-                
+            channel   = self.measurement_state['channels'][self.measurement_state['channel_index']]
+            position  = self.measurement_state['current_position']
             # Evaluate metrics
             result = evaluate_measurement(thd_json, ir_json, coherence_array)
             if not result:
@@ -304,6 +295,8 @@ class MeasurementWorker(QThread):
                 
             # Emit metrics for display
             result['uuid'] = measurement_uuid
+            result['channel']   = channel                   
+            result['position']  = position                 
             self.metrics_update.emit(result)
             
             # Send detailed info to status
@@ -333,7 +326,7 @@ class MeasurementWorker(QThread):
             
             # Mark current pair as completed
             state['pair_completed'] = True
-            
+            state['re_idx'] += 1                
             # Reset retry count and continue with next pair
             self.current_retry = 0
             QTimer.singleShot(500, self.continue_measurement)
@@ -403,6 +396,13 @@ class MeasurementWorker(QThread):
         self.quit()
         self.wait()
 
+    def stop_and_finish(self):
+        if self.running:                  
+            self.running = False
+            self.grid_flash_signal.emit(False)
+            self.finished.emit()          
+        self.quit()                       
+
 class ProcessingWorker(QThread):
     """Worker thread for handling cross correlation and vector averaging with error recovery"""
     status_update = pyqtSignal(str)
@@ -419,8 +419,9 @@ class ProcessingWorker(QThread):
         self.check_timer = None
 
     def run(self):
-        self.start_processing()
-        self.exec_()
+        QTimer.singleShot(0, self.start_processing)
+        super().run()
+
 
     def start_processing(self):
         """Start the processing workflow"""
@@ -432,9 +433,7 @@ class ProcessingWorker(QThread):
         # Check if we've processed all channels
         if state['channel_index'] >= len(state['channels']):
             self.status_update.emit("All processing complete!")
-            state['running'] = False
-            self.finished.emit()
-            self.quit()
+            self.stop_and_finish()
             return
         
         current_channel = state['channels'][state['channel_index']]
@@ -595,3 +594,10 @@ class ProcessingWorker(QThread):
             self.check_timer = None
         self.quit()
         self.wait()
+
+    def stop_and_finish(self):
+        """Graceful completion: turn flash off, emit finished, quit loop."""
+        if self.running:
+            self.running = False
+            self.finished.emit()          # GUI will catch this
+        self.quit()                       # let the thread end

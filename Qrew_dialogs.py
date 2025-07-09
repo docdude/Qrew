@@ -2,18 +2,45 @@
 
 import os
 import datetime
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
-                            QPushButton, QLineEdit, QCheckBox, QGridLayout,
+from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QCheckBox, QGridLayout,
                             QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog,
-                            QDialog, QSizePolicy, QComboBox, QScrollArea, QGroupBox, QFrame, QToolButton, QStyle, QToolTip)
+                            QDialog, QSizePolicy, QScrollArea, QGroupBox, QFrame, QComboBox)
 
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QSettings, QEvent, QSize
-from PyQt5.QtGui import QPixmap, QPalette, QBrush, QColor, QFont, QIcon
+from PyQt5.QtCore import Qt
 
 from Qrew_button import Button
 from Qrew_styles import HTML_ICONS
-from Qrew_common import SPEAKER_LABELS
+from Qrew_common import SPEAKER_LABELS, SPEAKER_CONFIGS
+
+
+# expose speaker configs for MainWindow
+def get_speaker_configs():   
+    return SPEAKER_CONFIGS
+# ----
+
+def center_dialog_on_parent(dialog, parent):
+    """Center dialog on parent window, ensuring it stays on screen"""
+    if not parent:
+        return
+        
+    # Get parent geometry
+    parent_rect = parent.geometry()
+    dialog_rect = dialog.geometry()
+    
+    # Calculate center position
+    x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+    y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+    
+    # Ensure dialog stays on screen
+    from PyQt5.QtWidgets import QApplication
+    screen = QApplication.primaryScreen().geometry()
+    
+    # Clamp to screen bounds
+    x = max(0, min(x, screen.width() - dialog_rect.width()))
+    y = max(0, min(y, screen.height() - dialog_rect.height()))
+    
+    dialog.move(x, y)
 
 class PositionDialog(QDialog):
     def __init__(self, position, parent=None):
@@ -21,7 +48,8 @@ class PositionDialog(QDialog):
         self.setWindowTitle("Position Change")
         self.setFixedSize(400, 150)
         self.setModal(True)
-        
+        center_dialog_on_parent(self, parent)  
+
         layout = QVBoxLayout()
        # layout.setSpacing(15)
         layout.setContentsMargins(0, 20, 0, 20)
@@ -61,7 +89,8 @@ class MeasurementQualityDialog(QDialog):
         self.setWindowTitle('Measurement Quality Issue')
         self.setFixedSize(500, 300)
         self.setModal(True)
-        
+        center_dialog_on_parent(self, parent)  
+    
         layout = QVBoxLayout()
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -184,6 +213,7 @@ class SaveMeasurementsDialog(QDialog):
         self.setWindowTitle('Save Raw Measurements')
         self.setFixedSize(600, 300)  # Increased size
         self.setModal(True)
+        center_dialog_on_parent(self, parent)  
         
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         default_name = f'Pre-processedMeasurements_{timestamp}'
@@ -358,6 +388,7 @@ class ClearMeasurementsDialog(QDialog):
         self.setWindowTitle('Clear Existing Measurements')
         self.setFixedSize(450, 200)
         self.setModal(True)
+        center_dialog_on_parent(self, parent)  
         
         layout = QVBoxLayout()
         layout.setSpacing(15)
@@ -496,6 +527,7 @@ class RepeatMeasurementDialog(QDialog):
         self.setWindowTitle('Repeat Measurements')
         self.setFixedSize(700, 600)
         self.setModal(True)
+        center_dialog_on_parent(self, parent)  
         
         self.measurement_qualities = measurement_qualities
         self.num_positions = num_positions
@@ -668,6 +700,8 @@ class RepeatMeasurementDialog(QDialog):
             if abbr in available_channels:
                 checkbox = QCheckBox(abbr)
                 checkbox.setToolTip(full_name)
+                checkbox.setMinimumWidth(75)
+
                 checkbox.setStyleSheet('''
                     QCheckBox {
                         padding: 3px;
@@ -687,11 +721,12 @@ class RepeatMeasurementDialog(QDialog):
                     }
                 ''')
                 
-                channel_layout.addWidget(checkbox, i // columns, i % columns)
+                channel_layout.addWidget(checkbox, i // columns, i % columns, Qt.AlignLeft)
                 self.channel_checkboxes[abbr] = checkbox
-        
+        channel_layout.setRowStretch(channel_layout.rowCount(), 1)
+        channel_layout.setColumnStretch(channel_layout.columnCount(), 1)
         # Add select all/none buttons
-        button_layout = QHBoxLayout()
+        button_layout = QVBoxLayout()
         select_all_btn = Button("Select All Channels")
         select_all_btn.setStyleSheet('''
             QPushButton {
@@ -723,9 +758,9 @@ class RepeatMeasurementDialog(QDialog):
         
         button_layout.addWidget(select_all_btn)
         button_layout.addWidget(select_none_btn)
-        button_layout.addStretch()
+       # button_layout.addStretch()
         
-        channel_widget_layout = QVBoxLayout()
+        channel_widget_layout = QHBoxLayout()
         channel_widget_layout.addLayout(channel_layout)
         channel_widget_layout.addLayout(button_layout)
         
@@ -1010,7 +1045,8 @@ class DeleteSelectedMeasurementsDialog(QDialog):
         self.setWindowTitle('Delete Selected Measurements')
         self.setFixedSize(500, 300)
         self.setModal(True)
-        
+        center_dialog_on_parent(self, parent)  
+       
         layout = QVBoxLayout()
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1093,8 +1129,9 @@ class SettingsDialog(QDialog):
     def __init__(self, current_values: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Application Settings")
+        self.setFixedSize(400, 350)
         self.setModal(True)
-        self.setFixedSize(400, 280)
+        center_dialog_on_parent(self, parent)  
 
         # --- available options ----------------------------------------
         self.options = [
@@ -1140,6 +1177,55 @@ class SettingsDialog(QDialog):
             self.checks[key] = cb
             form.addWidget(cb)
 
+        # ── NEW: speaker configuration row ────────────────────────
+        cfg_row = QHBoxLayout()
+        cfg_lab = QLabel("Speaker Configuration:")
+        cfg_lab.setStyleSheet("font-size: 14px;")
+        self.cfg_combo = QComboBox()
+        self.cfg_combo.addItems(SPEAKER_CONFIGS.keys())
+        self.cfg_combo.setCurrentText(
+            current_values.get("speaker_config", "Manual Select"))
+        self.cfg_combo.setStyleSheet("""
+            QComboBox {
+                border: 2px solid gray; border-radius: 4px;
+                padding: 1px 22px 1px 6px;
+                background: rgba(0,0,0,0.80); color: white; font-size: 14px;
+            }
+        """)
+        # inside SettingsDialog.__init__  (after self.cfg_combo is created)
+        self.cfg_combo.currentTextChanged.connect(self.preview_preset)
+
+
+
+        cfg_row.addWidget(cfg_lab)
+        cfg_row.addWidget(self.cfg_combo)
+        cfg_row.addStretch()
+        form.addLayout(cfg_row)
+
+        # VLC Backend selection
+        backend_layout = QHBoxLayout()
+        backend_label = QLabel("VLC Backend:")
+        backend_label.setStyleSheet("font-size: 14px; font-weight: normal;")
+        
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["auto", "libvlc", "subprocess"])
+        self.backend_combo.setCurrentText(current_values.get("vlc_backend", "auto"))
+        self.backend_combo.setStyleSheet("""
+            QComboBox {
+                border: 2px solid gray;
+                border-radius: 4px;
+                padding: 1px 22px 1px 6px;     /* leave space for arrow */
+                background: rgba(0, 0, 0, 0.80);   /* 50 % opacity black */
+                color: white;                       /* visible text      */
+                font-size: 14px;
+            }
+        """)
+    
+        backend_layout.addWidget(backend_label)
+        backend_layout.addWidget(self.backend_combo)
+        backend_layout.addStretch()
+        form.addLayout(backend_layout)
+
         form.addStretch()
 
         # buttons row using Button class
@@ -1183,10 +1269,19 @@ class SettingsDialog(QDialog):
         row.addWidget(ok_btn)
         form.addLayout(row)
 
+    def preview_preset(self, name):
+        presets = SPEAKER_CONFIGS
+        if name in presets and self.parent():          # parent is MainWindow
+            self.parent().apply_speaker_preset(presets[name])
+            self.parent()._set_channel_header(name)
+            
     def values(self) -> dict:
-        """Return a dict with the current checkbox states."""
-        return {k: cb.isChecked() for k, cb in self.checks.items()}
-
+        """Return a dict with the current checkbox states and backend selection."""
+        result = {k: cb.isChecked() for k, cb in self.checks.items()}
+        result["vlc_backend"] = self.backend_combo.currentText()
+        result["speaker_config"] = self.cfg_combo.currentText()
+        return result
+    
     @classmethod
     def load(cls) -> dict:
         import json, os
@@ -1201,3 +1296,92 @@ class SettingsDialog(QDialog):
         import json
         with open(cls.FILE, "w") as f:
             json.dump(data, f, indent=2)
+
+class REWConnectionDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("REW Connection Required")
+        self.setFixedSize(450, 235)
+        self.setModal(True)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 5, 20, 15)
+        
+        # Warning header
+        title_layout = QHBoxLayout()
+        warning_icon = QLabel(f'<span style="color: #ff9500; font-size: 24px;">{HTML_ICONS["warning"]}</span>')
+        warning_icon.setTextFormat(Qt.RichText)
+        title_layout.addWidget(warning_icon)
+        
+        title_label = QLabel("REW Not Detected")
+        title_label.setStyleSheet('font-weight: bold; font-size: 16px; color: #ff9500;')
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+        layout.addLayout(title_layout)
+        
+        # Message
+        message_text = (
+            "REW API is not responding.\n\n"
+            "Please start REW and ensure the API server is enabled:\n"
+            "• Open REW\n"
+            "• Go to Preferences → API\n"
+            "• Enable 'Start Server'\n"
+            "• Default port should be 4735"
+        )
+        
+        message_label = QLabel(message_text)
+        message_label.setStyleSheet('font-size: 14px; line-height: 1.4;')
+        message_label.setWordWrap(True)
+        layout.addWidget(message_label)
+        
+        layout.addStretch()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self.exit_button = Button('Exit Application')
+        self.exit_button.clicked.connect(lambda: self.done(0))  # Return 0 for exit
+        self.exit_button.setStyleSheet('''
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                border: 1px solid #d32f2f;
+                padding: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        ''')
+        
+        self.retry_button = Button('Retry Connection')
+        self.retry_button.clicked.connect(lambda: self.done(1))  # Return 1 for retry
+        self.retry_button.setDefault(True)
+        self.retry_button.setStyleSheet('''
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: 1px solid #45a049;
+                padding: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:default {
+                border: 2px solid #2e7d32;
+            }
+        ''')
+        
+        button_layout.addWidget(self.exit_button)
+        button_layout.addSpacing(10)
+        button_layout.addWidget(self.retry_button)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)

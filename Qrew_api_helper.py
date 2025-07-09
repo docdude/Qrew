@@ -582,13 +582,16 @@ def get_measurement_by_uuid(measurement_uuid):
         print(f"Error parsing measurements for {measurement_uuid}: {e}")
         return None
 
-def get_measurement_distortion_by_uuid(measurement_uuid):
+def get_measurement_distortion_by_uuid(measurement_uuid, ppo=96):
     """
-    Get the latest measurement distortion from REW.
-    Returns measurement_distortion or None if no result.
+    Get the latest measurement distortion from REW with maximum resolution.
+    
+    Args:
+        measurement_uuid: The measurement UUID
+        ppo: Points per octave for sweep distortion (default 96 for maximum resolution)
     """
     try:
-        response = requests.get(f"{REW_API_BASE_URL}/measurements/{measurement_uuid}/distortion")
+        response = requests.get(f"{REW_API_BASE_URL}/measurements/{measurement_uuid}/distortion?ppo={ppo}")
         response.raise_for_status()
         measurement_distortion = response.json()
 
@@ -700,6 +703,64 @@ def subscribe_to_rew_errors():
     except Exception as e:
         print(f"❌ Failed to subscribe to REW errors: {e}")
         return False
+    
+def subscribe_to_rta_distortion():
+    """Subscribe to RTA distortion updates"""
+    try:
+        payload = {
+            "url": "http://127.0.0.1:5555/rta-distortion",
+            "parameters": {
+                "unit": "SPL", 
+                "distortion": "percent"
+            }
+        }
+        response = requests.post(f"{REW_API_BASE_URL}/rta/distortion/subscribe", json=payload)
+        response.raise_for_status()
+        print("✅ Subscribed to RTA distortion updates")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to subscribe to RTA distortion: {e}")
+        return False
+
+def unsubscribe_from_rta_distortion():
+    """Unsubscribe from RTA distortion updates"""
+    try:
+        payload = {
+            "url": "http://127.0.0.1:5555/rta-distortion",
+            "parameters": {
+                "unit": "SPL", 
+                "distortion": "percent"
+            }
+        }
+        response = requests.post(f"{REW_API_BASE_URL}/rta/distortion/unsubscribe", json=payload)
+        response.raise_for_status()
+        print("✅ Unsubscribed from RTA distortion updates")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to unsubscribe from RTA distortion: {e}")
+        return False
+
+def start_rta():
+    """Start RTA mode"""
+    try:
+        payload = {"command": "Start"}
+        response = requests.post(f"{REW_API_BASE_URL}/rta/command", json=payload)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"❌ Failed to start RTA: {e}")
+        return False
+
+def stop_rta():
+    """Stop RTA mode"""
+    try:
+        payload = {"command": "Stop"}
+        response = requests.post(f"{REW_API_BASE_URL}/rta/command", json=payload)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"❌ Failed to stop RTA: {e}")
+        return False
 
 def check_rew_health():
     """Check REW's current health status"""
@@ -730,3 +791,22 @@ def check_rew_connection():
         pass
     return False
 
+def initialize_rew_subscriptions():
+    """Initialize all REW subscriptions"""
+    print("🔄 Initializing REW subscriptions...")
+    
+    # Subscribe to status updates
+    subscribe_to_rew_status()
+    
+    # Subscribe to warnings
+    subscribe_to_rew_warnings()
+    
+    # Subscribe to errors  
+    subscribe_to_rew_errors()
+    
+    # Check initial health
+    health = check_rew_health()
+    if health['healthy']:
+        print("✅ REW appears healthy")
+    else:
+        print(f"⚠️ REW health check shows issues: {health}")
