@@ -258,7 +258,7 @@ def handle_status():
             sweep_file = find_sweep_file(ch)
             if sweep_file:
                 print(f"Playing sweep file for {ch}: {sweep_file}")
-                play_file(sweep_file, show_interface=Qrew_common.show_vlc_gui)
+                play_file(sweep_file)
                 message_bridge.emit_message(f"Playing sweep for {ch}")
 
 

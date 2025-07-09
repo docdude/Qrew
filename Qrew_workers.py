@@ -9,6 +9,7 @@ from Qrew_message_handlers import coordinator
 from Qrew_measurement_metrics import evaluate_measurement
 
 from Qrew_dialogs import SettingsDialog
+import Qrew_settings as qs
 
 class MeasurementWorker(QThread):
     """Worker thread for handling measurements with error recovery"""
@@ -161,8 +162,8 @@ class MeasurementWorker(QThread):
     def check_measurement_quality_and_pause(self):
         """Check if measurement quality requires user intervention"""
         # Only check if setting is enabled
-        settings = SettingsDialog.load()
-        if not settings.get('auto_pause_on_quality_issue', False):
+        #settings = SettingsDialog.load()
+        if not qs.get('auto_pause_on_quality_issue', False):
             return True  # Continue without checking
         
         # Get current measurement info

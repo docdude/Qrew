@@ -3,6 +3,7 @@ import os, platform, subprocess, threading, queue, time, shutil, re
 from pathlib import Path
 from typing import Callable, Optional
 import Qrew_common
+import Qrew_settings as qs
 
 try:
     import vlc          # python-vlc
@@ -43,12 +44,11 @@ class VLCPlayer:
 
     # -------------------- libvlc path --------------------------------
     def _play_libvlc(self, path, show_gui, on_finished):
-        intf_flag = "--intf=qt" if show_gui else "--intf=dummy"
+        intf_flag = "" if show_gui else "--intf=dummy"
         instance  = vlc.Instance("--play-and-exit", intf_flag)
         player    = instance.media_player_new()
         player.set_media(instance.media_new(Path(path).as_posix()))
         player.audio_set_volume(100)
-
         # Finish queue + callback
         done_q = queue.Queue()
 
@@ -151,7 +151,7 @@ def find_sweep_file(channel):
 
     return None
 
-def play_file(filepath, show_interface=False):
+def play_file(filepath):
     """
     Non-blocking, cross-platform media file player.
     
@@ -167,7 +167,8 @@ def play_file(filepath, show_interface=False):
         return False
     
     try:
-        backend = getattr(Qrew_common, 'vlc_backend', 'auto')
+        backend   = qs.get("vlc_backend", "auto")
+        show_interface  = qs.get("show_vlc_gui", False)
         print(f"🎵 Starting playback: {os.path.basename(filepath)} (GUI: {show_interface}, Backend: {backend})")
         
         _global_player.play(
@@ -182,7 +183,7 @@ def play_file(filepath, show_interface=False):
         print(f"❌ Playback failed: {e}")
         return False
 
-def play_file_with_callback(filepath, show_interface=False, completion_callback=None):
+def play_file_with_callback(filepath, completion_callback=None):
     """
     Play file with completion callback for RTA verification.
     
@@ -199,9 +200,10 @@ def play_file_with_callback(filepath, show_interface=False, completion_callback=
         return False
     
     try:
-        backend = getattr(Qrew_common, 'vlc_backend', 'auto')
+        backend   = qs.get("vlc_backend", "auto")
+        show_interface  = qs.get("show_vlc_gui", False)        
         print(f"🎵 Starting callback playback: {os.path.basename(filepath)} (GUI: {show_interface}, Backend: {backend})")
-        
+            
         def on_finished():
             print(f"✅ Callback playback finished: {os.path.basename(filepath)}")
             if completion_callback:

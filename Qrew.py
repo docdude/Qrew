@@ -18,6 +18,7 @@ import platform
 from threading import Thread
 from Qrew_common import SPEAKER_LABELS
 import Qrew_common
+import Qrew_settings as qs
 
 from Qrew_api_helper import (get_measurement_count, get_measurement_by_uuid, get_all_measurements_with_uuid, get_selected_channels_with_measurements_uuid, get_measurement_distortion_by_uuid,
                              save_all_measurements, delete_all_measurements, delete_measurement_by_uuid, delete_measurements_by_uuid,
@@ -55,7 +56,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Qrew")
         self.setFixedSize(500, 800)  # Increased height for metrics display
 
-        self.app_settings = SettingsDialog.load()
+        self.app_settings = qs._load()
         print(f"DEBUG: Loaded settings: {self.app_settings}")
         print(f"DEBUG: Settings file exists: {os.path.exists('settings.json')}")
         # Message tracking
@@ -537,8 +538,8 @@ class MainWindow(QMainWindow):
         main_layout.addSpacing(0)
 
         # load persisted settings and apply once
-        self.app_settings = SettingsDialog.load()
-        self.apply_settings()
+       # self.app_settings = SettingsDialog.load()
+        #self.apply_settings()
 
         # Pass VLC GUI preference to message handler
         from Qrew_common import set_vlc_gui_preference
@@ -800,9 +801,10 @@ class MainWindow(QMainWindow):
         for checkbox in self.channel_checkboxes.values():
             checkbox.setChecked(False)
         self.channel_label.setText(f"Select Speaker Channels (Manual Select):")
-        self.app_settings['speaker_config'] = 'Manual Select'
-        SettingsDialog.save(self.app_settings)
-
+        #self.app_settings['speaker_config'] = 'Manual Select'
+        #SettingsDialog.save(self.app_settings)
+        qs.set('speaker_config', 'Manual Select')
+        
     def load_stimulus_file(self):
         # Get last directory from settings, default to empty string
         last_dir = self.qsettings.value("last_stimulus_directory", "")
@@ -1227,17 +1229,18 @@ class MainWindow(QMainWindow):
         current = getattr(self, "app_settings", {})
         dlg = SettingsDialog(current, self)
         if dlg.exec_():
-            self.app_settings = dlg.values()
-            SettingsDialog.save(self.app_settings)
-            self.apply_settings()
+            for key, value in dlg.values().items():
+                qs.set(key, value)          # persist + share
+            self.apply_settings()           # read straight from qs
+
 
     def apply_settings(self):
         """Apply settings after load / save."""
-        if self.app_settings.get("show_tooltips", True):
+        if qs.get("show_tooltips", True):
             QToolTip.setFont(QFont("Arial", 10))
         else:
             QToolTip.hideText()
-        cfg_name = self.app_settings.get("speaker_config",
+        cfg_name = qs.get("speaker_config",
                                         "Manual Select")
         self._set_channel_header(cfg_name)
 
@@ -1250,18 +1253,6 @@ class MainWindow(QMainWindow):
         from Qrew_common import set_vlc_gui_preference, set_vlc_backend
         set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
         set_vlc_backend(self.app_settings.get('vlc_backend', 'auto'))
-"""
-def wait_for_rew_qt():
-    while not check_rew_connection():
-        msg_box = QMessageBox()
-        msg_box.setIcon(QMessageBox.Warning)
-        msg_box.setWindowTitle("REW Not Detected")
-        msg_box.setText("REW API not responding.\n\nPlease start REW and ensure the server is enabled (Preferences → API → Start Server).")
-        msg_box.setStandardButtons(QMessageBox.Retry | QMessageBox.Cancel)
-        
-        if msg_box.exec_() == QMessageBox.Cancel:
-            sys.exit(1)
-"""
 
 def wait_for_rew_qt():
     """Wait for REW connection using custom dialog"""
