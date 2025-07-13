@@ -1,0 +1,209 @@
+{
+  "speakers": {
+    "C": {
+      "name": "Center",
+      "x": 908,
+      "y": 107
+    },
+    "FL": {
+      "name": "Front Left",
+      "x": 715,
+      "y": 107
+    },
+    "FR": {
+      "name": "Front Right",
+      "x": 1105,
+      "y": 107
+    },
+    "SLA": {
+      "name": "Surround Left",
+      "x": 583,
+      "y": 680
+    },
+    "SRA": {
+      "name": "Surround Right",
+      "x": 1237,
+      "y": 680
+    },
+    "SBL": {
+      "name": "Surround Back Left",
+      "x": 815,
+      "y": 714
+    },
+    "SBR": {
+      "name": "Surround Back Right",
+      "x": 1002,
+      "y": 714
+    },
+    "TFL": {
+      "name": "Top Front Left",
+      "x": 706,
+      "y": 309
+    },
+    "TFR": {
+      "name": "Top Front Right",
+      "x": 1134,
+      "y": 309
+    },
+    "TML": {
+      "name": "Top Middle Left",
+      "x": 707,
+      "y": 566
+    },
+    "TMR": {
+      "name": "Top Middle Right",
+      "x": 1133,
+      "y": 566
+    },
+    "TRL": {
+      "name": "Top Rear Left",
+      "x": 706,
+      "y": 803
+    },
+    "TRR": {
+      "name": "Top Rear Right",
+      "x": 1134,
+      "y": 803
+    },
+    "FDL": {
+      "name": "Front Dolby Left",
+      "x": 715,
+      "y": 107
+    },
+    "FDR": {
+      "name": "Front Dolby Right",
+      "x": 1104,
+      "y": 107
+    },
+    "FHL": {
+      "name": "Front Height Left",
+      "x": 627,
+      "y": 53
+    },
+    "FHR": {
+      "name": "Front Height Right",
+      "x": 1186,
+      "y": 53
+    },
+    "FWL": {
+      "name": "Front Wide Left",
+      "x": 583,
+      "y": 444
+    },
+    "FWR": {
+      "name": "Front Wide Right",
+      "x": 1233,
+      "y": 444
+    },
+    "RHL": {
+      "name": "Rear Height Left",
+      "x": 628,
+      "y": 811
+    },
+    "RHR": {
+      "name": "Rear Height Right",
+      "x": 1187,
+      "y": 811
+    },
+    "SDL": {
+      "name": "Surround Dolby Left",
+      "x": 583,
+      "y": 558
+    },
+    "SDR": {
+      "name": "Surround Dolby Right",
+      "x": 1234,
+      "y": 558
+    },
+    "SHL": {
+      "name": "Surround Height Left",
+      "x": 628,
+      "y": 811
+    },
+    "SHR": {
+      "name": "Surround Height Right",
+      "x": 1188,
+      "y": 811
+    },
+    "BDL": {
+      "name": "Back Dolby Left",
+      "x": 816,
+      "y": 715
+    },
+    "BDR": {
+      "name": "Back Dolby Right",
+      "x": 1002,
+      "y": 715
+    },
+    "SW1": {
+      "name": "Subwoofer 1",
+      "x": 591,
+      "y": 179
+    },
+    "SW2": {
+      "name": "Subwoofer 2",
+      "x": 1228,
+      "y": 179
+    },
+    "SW3": {
+      "name": "Subwoofer 3",
+      "x": 797,
+      "y": 804
+    },
+    "SW4": {
+      "name": "Subwoofer 4",
+      "x": 1013,
+      "y": 804
+    }
+  },
+  "mics": {
+    "0": {
+      "x": 910,
+      "y": 552
+    },
+    "1": {
+      "x": 998,
+      "y": 552
+    },
+    "2": {
+      "x": 822,
+      "y": 552
+    },
+    "3": {
+      "x": 822,
+      "y": 478
+    },
+    "4": {
+      "x": 910,
+      "y": 478
+    },
+    "5": {
+      "x": 998,
+      "y": 478
+    },
+    "6": {
+      "x": 877,
+      "y": 581
+    },
+    "7": {
+      "x": 943,
+      "y": 581
+    },
+    "8": {
+      "x": 866,
+      "y": 552
+    },
+    "9": {
+      "x": 954,
+      "y": 552
+    },
+    "10": {
+      "x": 781,
+      "y": 598
+    },
+    "11": {
+      "x": 1034,
+      "y": 598
+    }
+  }
+}
