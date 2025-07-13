@@ -7,12 +7,14 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QCheckBox, QGridLayout,
                             QDialog, QSizePolicy, QScrollArea, QGroupBox, QFrame, QComboBox)
 
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 
 from Qrew_button import Button
 from Qrew_styles import HTML_ICONS
 from Qrew_common import SPEAKER_LABELS, SPEAKER_CONFIGS
-
+from Qrew_messagebox import QrewMessageBox, QrewFileDialog
+import Qrew_settings as qs
+from Qrew_micwidget_icons import MicPositionWidget
 
 # expose speaker configs for MainWindow
 def get_speaker_configs():   
@@ -46,7 +48,7 @@ class PositionDialog(QDialog):
     def __init__(self, position, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Position Change")
-        self.setFixedSize(400, 150)
+        self.setFixedSize(450, 200)
         self.setModal(True)
         center_dialog_on_parent(self, parent)  
 
@@ -87,7 +89,7 @@ class MeasurementQualityDialog(QDialog):
     def __init__(self, measurement_info, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Measurement Quality Issue')
-        self.setFixedSize(500, 300)
+        self.setFixedSize(500, 380)
         self.setModal(True)
         center_dialog_on_parent(self, parent)  
     
@@ -338,7 +340,7 @@ class SaveMeasurementsDialog(QDialog):
 
     def browse_directory(self):
         current_dir = self.directory_input.text() or os.path.expanduser('~/Documents')
-        directory = QFileDialog.getExistingDirectory(
+        directory = QrewFileDialog.getExistingDirectory(
             self, 
             'Select Directory for Measurements', 
             current_dir
@@ -351,15 +353,15 @@ class SaveMeasurementsDialog(QDialog):
         directory = self.directory_input.text().strip()
         
         if not filename:
-            QMessageBox.warning(self, 'Invalid Input', 'Please enter a filename.')
+            QrewMessageBox.warning(self, 'Invalid Input', 'Please enter a filename.')
             return
             
         if not directory:
-            QMessageBox.warning(self, 'Invalid Input', 'Please select a directory.')
+            QrewMessageBox.warning(self, 'Invalid Input', 'Please select a directory.')
             return
             
         if not os.path.exists(directory):
-            QMessageBox.warning(self, 'Invalid Directory', 'Selected directory does not exist.')
+            QrewMessageBox.warning(self, 'Invalid Directory', 'Selected directory does not exist.')
             return
         
         # Ensure .mdat extension
@@ -370,14 +372,14 @@ class SaveMeasurementsDialog(QDialog):
         
         # Check if file exists
         if os.path.exists(self.result_file_path):
-            reply = QMessageBox.question(
+            reply = QrewMessageBox.question(
                 self, 
                 'File Exists', 
                 f"File '{filename}' already exists. Overwrite?",
-                QMessageBox.Yes | QMessageBox.No, 
-                QMessageBox.No
+                QrewMessageBox.Yes | QrewMessageBox.No, 
+                QrewMessageBox.No
             )
-            if reply != QMessageBox.Yes:
+            if reply != QrewMessageBox.Yes:
                 return
         
         self.accept()
@@ -386,20 +388,20 @@ class ClearMeasurementsDialog(QDialog):
     def __init__(self, measurement_count, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Clear Existing Measurements')
-        self.setFixedSize(450, 200)
+        self.setFixedSize(450, 250)
         self.setModal(True)
         center_dialog_on_parent(self, parent)  
         
         layout = QVBoxLayout()
         layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(20, 0, 20, 20)
         
         # Warning icon and title
         title_layout = QHBoxLayout()
         
         # Warning label
         warning_label = QLabel(f'<span style="color: #d32f2f;">{HTML_ICONS["warning"]}</span>')
-        warning_label.setStyleSheet('font-size: 24px;')
+        warning_label.setStyleSheet('font-size: 50px;')
         title_layout.addWidget(warning_label)
         
         title_label = QLabel('Clear Existing Measurements')
@@ -408,7 +410,7 @@ class ClearMeasurementsDialog(QDialog):
         title_layout.addStretch()
         
         layout.addLayout(title_layout)
-        
+        layout.addSpacing(-15)
         # Message
         if measurement_count > 0:
             message_text = f'REW currently contains {measurement_count} measurement{"s" if measurement_count != 1 else ""}.\n\n' \
@@ -525,7 +527,7 @@ class RepeatMeasurementDialog(QDialog):
     def __init__(self, measurement_qualities, num_positions, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Repeat Measurements')
-        self.setFixedSize(700, 600)
+        self.setFixedSize(700, 610)
         self.setModal(True)
         center_dialog_on_parent(self, parent)  
         
@@ -537,7 +539,7 @@ class RepeatMeasurementDialog(QDialog):
         
         layout = QVBoxLayout()
         layout.setSpacing(15)
-        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setContentsMargins(20, 10, 20, 20)
         
         # Title
         title_label = QLabel('Select Measurements to Repeat')
@@ -625,7 +627,7 @@ class RepeatMeasurementDialog(QDialog):
                 caution_measurements.append(f"{channel}_pos{position} (Score: {score:.1f})")
 
         if retake_measurements:
-            retake_label = QLabel(f'<span style="color: #ff0000;">{HTML_ICONS["warning"]}</span> <b>RETAKE Recommended ({len(retake_measurements)}):</b>')
+            retake_label = QLabel(f'<span style="color: #ff0000; font-size: 20px;">{HTML_ICONS["warning"]}</span> <b>RETAKE Recommended ({len(retake_measurements)}):</b>')
             retake_label.setTextFormat(Qt.RichText)
             retake_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
@@ -634,12 +636,12 @@ class RepeatMeasurementDialog(QDialog):
             
             retake_text = QLabel(", ".join(retake_measurements))
             retake_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            retake_text.setStyleSheet('color: #ff6666; margin-left: 20px; margin-bottom: 10px;')
+            retake_text.setStyleSheet('color: #ff6666; margin-left: 20px; margin-bottom: 0px;')
             retake_text.setWordWrap(True)
             summary_layout.addWidget(retake_text)
         
         if caution_measurements:
-            caution_label = QLabel(f'<span style="color: #ffaa00;">{HTML_ICONS["warning"]}</span> <b>CAUTION ({len(caution_measurements)}):</b>')
+            caution_label = QLabel(f'<span style="color: #ffaa00; font-size: 20px;">{HTML_ICONS["warning"]}</span> <b>CAUTION ({len(caution_measurements)}):</b>')
             caution_label.setTextFormat(Qt.RichText)
             caution_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
@@ -647,12 +649,12 @@ class RepeatMeasurementDialog(QDialog):
             summary_layout.addWidget(caution_label)
             
             caution_text = QLabel(', '.join(caution_measurements))
-            caution_text.setStyleSheet('color: #ffcc66; margin-left: 20px; margin-bottom: 10px;')
+            caution_text.setStyleSheet('color: #ffcc66; margin-left: 20px; margin-bottom: 0px;')
             caution_text.setWordWrap(True)
             summary_layout.addWidget(caution_text)
         
         if not retake_measurements and not caution_measurements:
-            no_issues_label = QLabel(f'<span style="color: #00aa00;">{HTML_ICONS["check"]}</span> <b>All measurements passed with good quality!</b>')
+            no_issues_label = QLabel(f'<span style="color: #00aa00; font-size: 20px;">{HTML_ICONS["check"]}</span> <b>All measurements passed with good quality!</b>')
             no_issues_label.setTextFormat(Qt.RichText)
             no_issues_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             no_issues_label.setStyleSheet('color: #00aa00; font-weight: bold;')
@@ -1035,9 +1037,9 @@ class RepeatMeasurementDialog(QDialog):
             self.proceed_button.setEnabled(False)
 
     def proceed_with_remeasurement(self):
-        if self.selected_measurements:
-            self.result = 'proceed'
-            self.accept()
+       # if self.selected_measurements:
+        self.result = 'proceed'
+        self.accept()
 
 class DeleteSelectedMeasurementsDialog(QDialog):
     def __init__(self, selected_measurements, parent=None):
@@ -1049,7 +1051,7 @@ class DeleteSelectedMeasurementsDialog(QDialog):
        
         layout = QVBoxLayout()
         layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(20, 0, 20, 20)
         
         # Warning header
         title_layout = QHBoxLayout()
@@ -1124,12 +1126,13 @@ class DeleteSelectedMeasurementsDialog(QDialog):
         self.setLayout(layout)
 
 class SettingsDialog(QDialog):
-    FILE = "settings.json"
+   # FILE = "settings.json"
 
-    def __init__(self, current_values: dict, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Application Settings")
-        self.setFixedSize(400, 350)
+        current_values = qs.as_dict()
+        self.setFixedSize(400, 400)
         self.setModal(True)
         center_dialog_on_parent(self, parent)  
 
@@ -1138,6 +1141,7 @@ class SettingsDialog(QDialog):
             ("show_vlc_gui",  "Show VLC GUI"),
             ("show_tooltips", "Show Tool Tips"),
             ("auto_pause_on_quality_issue", "Pause on Quality Issues (CAUTION/RETAKE)"),
+            ("save_after_repeat", "Prompt to Save after Repeat Run")
         ]
 
         form = QVBoxLayout(self)
@@ -1177,7 +1181,7 @@ class SettingsDialog(QDialog):
             self.checks[key] = cb
             form.addWidget(cb)
 
-        # ── NEW: speaker configuration row ────────────────────────
+        # ──  speaker configuration row ────────────────────────
         cfg_row = QHBoxLayout()
         cfg_lab = QLabel("Speaker Configuration:")
         cfg_lab.setStyleSheet("font-size: 14px;")
@@ -1192,7 +1196,6 @@ class SettingsDialog(QDialog):
                 background: rgba(0,0,0,0.80); color: white; font-size: 14px;
             }
         """)
-        # inside SettingsDialog.__init__  (after self.cfg_combo is created)
         self.cfg_combo.currentTextChanged.connect(self.preview_preset)
 
 
@@ -1227,6 +1230,34 @@ class SettingsDialog(QDialog):
         form.addLayout(backend_layout)
 
         form.addStretch()
+
+        # Visualization 
+        viz_layout = QHBoxLayout()        
+        viz_label = QLabel("Visualization:")
+        viz_label.setStyleSheet("font-size: 14px; font-weight: normal;")
+       
+        # Compact/Dialog toggle
+        self.viz_mode_combo = QComboBox()
+        self.viz_mode_combo.addItems(["Grid View", "Compact Theater View", "Full Theater View"])
+        self.viz_mode_combo.setCurrentText(current_values.get("viz_view", "Grid View"))
+        self.viz_mode_combo.setMaximumWidth(150)
+        self.viz_mode_combo.setStyleSheet("""
+            QComboBox {
+                border: 2px solid gray;
+                border-radius: 4px;
+                padding: 1px 22px 1px 6px;
+                background: rgba(0, 0, 0, 0.80);
+                color: white;
+                font-size: 14px;
+            }
+        """)
+        viz_layout.addWidget(viz_label)
+        viz_layout.addWidget(self.viz_mode_combo)
+        
+        viz_layout.addStretch()
+        form.addLayout(viz_layout)
+        form.addStretch()
+
 
         # buttons row using Button class
         row = QHBoxLayout()
@@ -1280,22 +1311,23 @@ class SettingsDialog(QDialog):
         result = {k: cb.isChecked() for k, cb in self.checks.items()}
         result["vlc_backend"] = self.backend_combo.currentText()
         result["speaker_config"] = self.cfg_combo.currentText()
+        result["viz_view"] = self.viz_mode_combo.currentText()
         return result
-    
-    @classmethod
-    def load(cls) -> dict:
-        import json, os
-        try:
-            with open(cls.FILE, "r") as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError):
-            return {}
 
-    @classmethod
-    def save(cls, data: dict):
-        import json
-        with open(cls.FILE, "w") as f:
-            json.dump(data, f, indent=2)
+    def accept(self) -> None:
+        """
+        Persist all controls to settings.json via qs.set() and close the dialog.
+        """
+        # check-boxes
+        for key, cb in self.checks.items():
+            qs.set(key, cb.isChecked())
+
+        # combos
+        qs.set("vlc_backend",     self.backend_combo.currentText())
+        qs.set("speaker_config",  self.cfg_combo.currentText())
+        qs.set("viz_view", self.viz_mode_combo.currentText())
+        super().accept()          # close the dialog
+   
 
 class REWConnectionDialog(QDialog):
     def __init__(self, parent=None):
@@ -1385,3 +1417,60 @@ class REWConnectionDialog(QDialog):
         
         layout.addLayout(button_layout)
         self.setLayout(layout)
+
+
+class MicPositionVisualizationDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Measurement Position Visualization")
+
+        self.setModal(False)  # Non-modal so it can stay open during measurements
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        
+        # Create the visualization widget
+        self.mic_widget = MicPositionWidget(
+            "/Users/juanloya/Documents/qrew/qrew/hometheater_base_persp.png", 
+            "/Users/juanloya/Documents/qrew/qrew/room_layout_persp.json"
+        )
+        
+        # Layout
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.mic_widget)
+        
+        # Control buttons
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(10, 5, 10, 10)
+        
+        self.stay_on_top_check = QCheckBox("Stay on Top")
+        self.stay_on_top_check.setChecked(True)
+        self.stay_on_top_check.stateChanged.connect(self.toggle_stay_on_top)
+        
+        self.close_button = Button("Close")
+        self.close_button.clicked.connect(self.hide)  # Hide instead of close
+        self.close_button.setMaximumWidth(100)
+        
+        button_layout.addWidget(self.stay_on_top_check)
+        button_layout.addStretch()
+        button_layout.addWidget(self.close_button)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+        
+        # Set size based on background image
+        self.resize(self.mic_widget.background.size() + QSize(0, 50))
+        
+    def toggle_stay_on_top(self, checked):
+        if checked:
+            self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        else:
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
+        self.show()  # Need to show again after changing window flags
+        
+    def update_visualization(self, active_mic=None, active_speakers=None):
+        """Update the visualization with current state"""
+        if active_mic is not None:
+            self.mic_widget.set_active_mic(active_mic)
+        
+        if active_speakers is not None:
+            self.mic_widget.set_active_speakers(active_speakers)

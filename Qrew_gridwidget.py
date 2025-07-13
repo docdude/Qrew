@@ -1,7 +1,7 @@
 # Qrew_gridwidget.py
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import QPointF, QLineF
+from PyQt5.QtCore import QPointF, QLineF, QSize
 import sys
 
 class GridWidget(QtWidgets.QWidget):
@@ -93,7 +93,7 @@ class GridWidget(QtWidgets.QWidget):
             p.drawLine(QLineF(start_point, end_point))
         
         # Draw node numbers
-        p.setFont(QtGui.QFont('Arial', 16, QtGui.QFont.Bold))
+        p.setFont(QtGui.QFont('Monaco', 18, QtGui.QFont.Bold))
         for (idx, pt) in coords.items():
             if idx == self.current_pos and self.flash_on:
                 p.setPen(QtCore.Qt.green)
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     import sys
     app = QtWidgets.QApplication(sys.argv)
     w = QtWidgets.QMainWindow()
-    grid = GridWidget(positions=3, current_pos=0)
+    grid = GridWidget(positions=9, current_pos=0)
     grid.setMinimumSize(300, 250)
     grid.set_horizontal_stretch(1.3)
     t = QtCore.QTimer()

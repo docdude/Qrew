@@ -1,14 +1,14 @@
 # Qrew_workers.py
-
+import time
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 
 from Qrew_api_helper import (start_capture, get_all_measurements, start_cross_corr_align, start_vector_avg, get_vector_average_result,  rename_measurement, 
-                             get_measurement_by_uuid, get_measurement_distortion_by_uuid, get_measurement_uuid )
-from Qrew_message_handlers import coordinator
+                             get_measurement_by_uuid, get_measurement_distortion_by_uuid, get_measurement_uuid, delete_measurement_by_uuid,
+                              subscribe_to_rta_distortion, start_rta, stop_rta, unsubscribe_from_rta_distortion, set_rta_configuration, set_rta_distortion_configuration_sine, set_rta_distortion_configuration_sweep  )
+from Qrew_message_handlers import coordinator, rta_coordinator
 
-from Qrew_measurement_metrics import evaluate_measurement
-
-from Qrew_dialogs import SettingsDialog
+from Qrew_measurement_metrics import evaluate_measurement, combine_sweep_and_rta_results
+from Qrew_vlc_helper_v2 import find_sweep_file, play_file_with_callback
 import Qrew_settings as qs
 
 class MeasurementWorker(QThread):
@@ -22,10 +22,13 @@ class MeasurementWorker(QThread):
     grid_position_signal = pyqtSignal(int)  # Add signal for grid position
     metrics_update = pyqtSignal(dict)  # Add signal for metrics
     show_quality_dialog = pyqtSignal(dict)  # Add this signal
+    visualization_update = pyqtSignal(int, list)  # position, active_speakers
 
     def __init__(self, measurement_state, parent_window=None):
         super().__init__()
         self.measurement_state = measurement_state
+        self.measurement_state.setdefault("pair_completed", False)
+
         self.parent_window = parent_window  # Add parent window reference
 
         self.running = True
@@ -33,6 +36,7 @@ class MeasurementWorker(QThread):
         self.max_retries = 3
         self.current_retry = 0
         self.check_timer = None  # Add timer reference
+        self._waiting_for_postion_dialog = False
 
     def run(self):
         QTimer.singleShot(0, self.continue_measurement)  
@@ -66,7 +70,10 @@ class MeasurementWorker(QThread):
             self.current_retry = 0  # Reset retry count for new position
             
             if state['current_position'] < state['num_positions']:
+                self._waiting_for_position_dialog = True
                 self.show_position_dialog.emit(state['current_position'])
+                # The MainWindow will call continue_measurement again after dialog
+                return
             else:
                 self.status_update.emit("All samples complete!")
                 self.stop_and_finish()
@@ -79,13 +86,14 @@ class MeasurementWorker(QThread):
         # Update grid to show current position and start flash
         self.grid_position_signal.emit(pos)
         self.grid_flash_signal.emit(True)
-        
+        self.visualization_update.emit(pos, [ch])
+
         retry_msg = f" (Retry {self.current_retry + 1}/{self.max_retries})" if self.current_retry > 0 else ""
         self.status_update.emit(f"Starting measurement for {sample_name}{retry_msg}...")
         
         # Reset coordinator and start measurement
         coordinator.reset(ch, pos)
-        
+        #time.sleep(0.1) #optional
         success, error_msg = start_capture(
             ch, pos, 
             status_callback=self.status_update.emit,
@@ -99,6 +107,15 @@ class MeasurementWorker(QThread):
 
         # Start checking for completion with improved timing
         self.start_completion_check()
+
+    # Method to handle dialog completion:
+    def continue_after_dialog(self):
+        """Called by MainWindow after position dialog is closed"""
+        if hasattr(self, '_waiting_for_position_dialog'):
+            self._waiting_for_position_dialog = False
+        
+        # Continue with measurement
+        QTimer.singleShot(100, self.continue_measurement)
 
     def handle_repeat_mode(self):
         """
@@ -123,19 +140,21 @@ class MeasurementWorker(QThread):
         if (not state.get('current_remeasure_pair')
                 or state.get('pair_completed', False)):
 
-            channel, position = pairs[state['re_idx']]
-            state['current_remeasure_pair'] = (channel, position)
+            channel, position, old_uuid = pairs[state['re_idx']]
+            state['current_remeasure_pair'] = (channel, position, old_uuid)
             state['channels']       = [channel]
             state['current_position'] = position
             state['channel_index']  = 0
             state['pair_completed'] = False
 
             self.grid_flash_signal.emit(False)          # stop any previous flash
+            self._waiting_for_position_dialog = True
+
             self.show_position_dialog.emit(position)    # user moves mic
             return                                      # wait for dialog
 
         # ── continue measuring current pair ──
-        channel, position = state['current_remeasure_pair']
+        channel, position, old_uuid = state['current_remeasure_pair']
         sample_name = f"{channel}_pos{position}"
 
         self.grid_position_signal.emit(position)
@@ -146,6 +165,7 @@ class MeasurementWorker(QThread):
         self.status_update.emit(f"Remeasuring {sample_name}{retry_msg}...")
 
         coordinator.reset(channel, position)
+        #time.sleed(0.1)  #optional
         success, err = start_capture(
             channel, position,
             status_callback=self.status_update.emit,
@@ -224,10 +244,15 @@ class MeasurementWorker(QThread):
     def start_completion_check(self):
         """Start checking for measurement completion"""
         self.timeout_count = 0
-        if self.check_timer:
+        
+        # Ensure any existing timer is properly stopped
+        if hasattr(self, 'check_timer') and self.check_timer:
             self.check_timer.stop()
+            self.check_timer.deleteLater()
             self.check_timer = None
-        self.check_measurement_complete()
+            
+        # Small delay before starting checks
+        QTimer.singleShot(100, self.check_measurement_complete)
 
     def check_measurement_complete(self):
         """Check if measurement is complete with better error handling"""
@@ -316,12 +341,24 @@ class MeasurementWorker(QThread):
         
         if state.get('repeat_mode', False):
             # Handle repeat mode
-            channel, position = state['current_remeasure_pair']
+            channel, position, old_uuid = state['current_remeasure_pair']
             self.status_update.emit(f"Completed remeasurement of {channel}_pos{position}")
             
             # Evaluate metrics before moving on
             self.evaluate_measurement_metrics()
-            
+            rating_ok = (
+                    self.parent_window
+                    and (channel, position) in self.parent_window.measurement_qualities
+                    and self.parent_window.measurement_qualities[(channel, position)]['rating'] == 'PASS'
+                )
+
+            if rating_ok:
+                # 1) drop the stale failure row so it never re-appears
+                self.parent_window.measurement_qualities.pop((channel, position), None)
+
+                # 2) delete the old measurement file in REW (already existed)
+                if old_uuid:
+                    delete_measurement_by_uuid(old_uuid)     
             # Turn off flash after success
             self.grid_flash_signal.emit(False)
             
@@ -355,6 +392,12 @@ class MeasurementWorker(QThread):
 
     def handle_measurement_failure(self, error_msg):
         """Handle measurement failure with retry logic"""
+        if "stimulus" in error_msg.lower() or "no stimulus" in error_msg.lower():
+            self.status_update.emit("Measurement aborted: stimulus file not loaded.")
+            self.error_occurred.emit("Repeat measurement aborted",
+                                    "Load the sweep WAV and try again.")
+            self.stop_and_finish()
+            return
         current_ch = self.measurement_state['channels'][self.measurement_state['channel_index']]
         current_pos = self.measurement_state['current_position']
         
@@ -374,9 +417,8 @@ class MeasurementWorker(QThread):
             self.current_retry = 0
             self.measurement_state['channel_index'] += 1
             QTimer.singleShot(1000, self.continue_measurement)
-        
+    """   
     def resume_after_position_dialog(self):
-        """Called after position dialog is completed"""
         state = self.measurement_state
         
         if state.get('repeat_mode', False):
@@ -385,24 +427,25 @@ class MeasurementWorker(QThread):
         else:
             # Original logic
             QTimer.singleShot(100, self.continue_measurement)
+    """
 
-        
     def stop(self):
-        """Stop the worker thread"""
-        self.running = False
-        if self.check_timer:
-            self.check_timer.stop()
-            self.check_timer = None
-        self.grid_flash_signal.emit(False)  # Turn off flash when stopping
-        self.quit()
-        self.wait()
+        """External hard-stop (e.g. MainWindow.closeEvent)"""
+        if not self.running:        # already stopped
+            return
+        self.stop_and_finish()      # <- delegate, emits `finished` & quits
+
 
     def stop_and_finish(self):
-        if self.running:                  
+        if self.running:
             self.running = False
-            self.grid_flash_signal.emit(False)
-            self.finished.emit()          
-        self.quit()                       
+            if self.check_timer:
+                self.check_timer.stop()
+                self.check_timer = None
+            self.grid_flash_signal.emit(False)   
+            self.finished.emit()                 # GUI hears this
+        self.quit()                              # exit thread loop
+                  
 
 class ProcessingWorker(QThread):
     """Worker thread for handling cross correlation and vector averaging with error recovery"""
@@ -588,17 +631,175 @@ class ProcessingWorker(QThread):
             QTimer.singleShot(1000, self.start_processing)
 
     def stop(self):
-        """Stop the worker thread"""
-        self.running = False
-        if self.check_timer:
-            self.check_timer.stop()
-            self.check_timer = None
-        self.quit()
-        self.wait()
+        """External hard-stop (e.g. MainWindow.closeEvent)"""
+        if not self.running:        # already stopped
+            return
+        self.stop_and_finish()      # <- delegate, emits `finished` & quits
+
 
     def stop_and_finish(self):
-        """Graceful completion: turn flash off, emit finished, quit loop."""
         if self.running:
             self.running = False
-            self.finished.emit()          # GUI will catch this
-        self.quit()                       # let the thread end
+            if self.check_timer:
+                self.check_timer.stop()
+                self.check_timer = None
+            self.finished.emit()                 # GUI hears this
+        self.quit()                              # exit thread loop
+                  
+
+class RTAWorker(QThread):
+    """Worker thread for RTA verification measurements"""
+    status_update = pyqtSignal(str)
+    error_occurred = pyqtSignal(str, str)
+    finished = pyqtSignal()
+    verification_complete = pyqtSignal(dict)  # Emits enhanced measurement result
+    
+    def __init__(self, channel, initial_result, duration=8):
+        super().__init__()
+        self.channel = channel
+        self.initial_result = initial_result
+        self.duration = duration
+        self.running = True
+        self.rta_samples = []
+        self.start_time = None
+        self.min_samples = 20
+        self.collecting = False
+
+    def run(self):
+        QTimer.singleShot(0, self.start_rta_measurement)
+        super().run()
+
+    def start_rta_measurement(self):
+        """Main RTA verification workflow"""
+        try:
+            self.status_update.emit(f"Starting RTA verification for {self.channel}...")
+            
+            # Subscribe to RTA distortion
+            if not subscribe_to_rta_distortion():
+                self.error_occurred.emit("RTA Error", "Failed to subscribe to RTA distortion")
+                return
+            if not set_rta_configuration():
+                self.error_occurred.emit("RTA Error", "Failed to set RTA configuration")
+            if not set_rta_distortion_configuration_sine():
+                self.error_occurred.emit("RTA Error", "Failed to set RTA distortion configuration")
+
+            # Start RTA mode
+            if not start_rta():
+                self.error_occurred.emit("RTA Error", "Failed to start RTA mode")
+                self.cleanup()
+                return
+            
+            # Brief delay to let RTA settle
+            time.sleep(0.5)
+            
+            # Start collecting samples
+            self.start_collection()
+            
+            # Play verification sweep with callback
+            sweep_file = find_sweep_file(self.channel)
+            if sweep_file:
+                self.status_update.emit(f"Playing verification sweep for {self.channel}")
+                success = play_file_with_callback(
+                    sweep_file, 
+                    completion_callback=self.on_playback_complete
+                )
+                if not success:
+                    self.error_occurred.emit("Playback Error", "Failed to start verification sweep")
+                    self.cleanup()
+                    return
+            else:
+                self.error_occurred.emit("File Error", f"No sweep file found for {self.channel}")
+                self.cleanup()
+                return
+            
+            # Wait for completion or timeout
+            self.wait_for_completion()
+            
+        except Exception as e:
+            self.error_occurred.emit("RTA Error", f"Unexpected error: {str(e)}")
+        finally:
+            self.cleanup()
+            self.stop_and_finish
+    
+    def start_collection(self):
+        """Start collecting RTA samples"""
+        self.collecting = True
+        self.rta_samples = []
+        self.start_time = time.time()
+        self.status_update.emit("Collecting RTA distortion data...")
+        
+        # Connect to the global RTA coordinator
+        rta_coordinator.start_collection(duration=self.duration)
+    
+    def on_playback_complete(self):
+        """Called when VLC playback finishes"""
+        self.status_update.emit("Playback complete, finalizing RTA collection...")
+        print("RTA verification sweep finished")
+        # Give a brief moment for final samples
+        QTimer.singleShot(1000, self.stop_collection)
+    
+    def wait_for_completion(self):
+        """Wait for collection to complete with timeout"""
+        timeout_count = 0
+        max_timeout = (self.duration + 5) * 10  # Add 5 second buffer, check every 100ms
+        
+        while self.collecting and self.running and timeout_count < max_timeout:
+            time.sleep(0.1)
+            timeout_count += 1
+            
+            # Check if we have enough samples and minimum time has passed
+            elapsed = time.time() - self.start_time if self.start_time else 0
+            if (elapsed >= self.duration and 
+                len(rta_coordinator.samples) >= self.min_samples):
+                self.stop_collection()
+                break
+        
+        if timeout_count >= max_timeout:
+            self.status_update.emit("RTA verification timed out")
+    
+    def stop_collection(self):
+        """Stop collecting and analyze results"""
+        if not self.collecting:
+            return
+            
+        self.collecting = False
+        
+        # Get results from global coordinator
+        rta_result = rta_coordinator.stop_collection()
+        
+        if rta_result and rta_result['stable_samples'] >= self.min_samples:
+            self.status_update.emit(f"RTA verification complete: {rta_result['stable_samples']} samples analyzed")
+            
+            # Combine with initial sweep result
+            enhanced_result = combine_sweep_and_rta_results(self.initial_result, rta_result)
+            self.verification_complete.emit(enhanced_result)
+        else:
+            self.status_update.emit("RTA verification failed - insufficient data")
+            self.verification_complete.emit(self.initial_result)  # Return original result
+    
+    def cleanup(self):
+        """Cleanup RTA resources"""
+        try:
+            stop_rta()
+            unsubscribe_from_rta_distortion()
+            if hasattr(rta_coordinator, 'collecting') and rta_coordinator.collecting:
+                rta_coordinator.stop_collection()
+        except Exception as e:
+            print(f"RTA cleanup error: {e}")
+    
+    def stop(self):
+        """External hard-stop (e.g. MainWindow.closeEvent)"""
+        if not self.running:        # already stopped
+            return
+        self.stop_and_finish()      # <- delegate, emits `finished` & quits
+
+
+    def stop_and_finish(self):
+        if self.running:
+            self.running = False
+            if self.check_timer:
+                self.check_timer.stop()
+                self.check_timer = None
+            self.grid_flash_signal.emit(False)   
+            self.finished.emit()                 # GUI hears this
+        self.quit()                              # exit thread loop

@@ -88,20 +88,3 @@ WAV_STIMULUS_FILENAME = "1MMeasSweep_0_to_24000_-12_dBFS_48k_Float_L_refR.wav"
 # Global variables
 selected_stimulus_path = None
 stimulus_dir = None
-show_vlc_gui = False 
-vlc_backend = 'auto'  # 'auto', 'libvlc', 'subprocess'
-
-def set_vlc_gui_preference(show_gui):
-    """Set the VLC GUI preference from main app"""
-    global show_vlc_gui
-    show_vlc_gui = show_gui
-
-
-
-def set_vlc_backend(backend):
-    """Set the VLC backend preference"""
-    global vlc_backend
-    if backend in ['auto', 'libvlc', 'subprocess']:
-        vlc_backend = backend
-    else:
-        print(f"Warning: Invalid VLC backend '{backend}', keeping '{vlc_backend}'")

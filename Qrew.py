@@ -31,8 +31,8 @@ from Qrew_workers import MeasurementWorker, ProcessingWorker
 from Qrew_styles import tint, HTML_ICONS
 from Qrew_button import Button
 from Qrew_gridwidget import GridWidget
-
-
+from Qrew_messagebox import QrewMessageBox, QrewFileDialog
+from Qrew_filedialog import get_open_file
 from Qrew_message_handlers import run_flask_server, message_bridge
 
 from Qrew_dialogs import (SettingsDialog, PositionDialog, MeasurementQualityDialog, ClearMeasurementsDialog, SaveMeasurementsDialog,
@@ -54,17 +54,23 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.qsettings = QSettings("Docdude", "Qrew")
         self.setWindowTitle("Qrew")
-        self.setFixedSize(500, 800)  # Increased height for metrics display
-
-        self.app_settings = qs._load()
-        print(f"DEBUG: Loaded settings: {self.app_settings}")
+        self.resize(500, 800)
+        self.setMinimumSize(500, 600)
+        self.bg_source = QPixmap("banner_500x680.png")   # original file
+        self.bg_opacity = 0.35                           # user-chosen α
+        self.set_background_image()                                 # first fill
+        #self.app_settings = qs._load()
+        print(f"DEBUG: Loaded settings: {qs._load()}")
         print(f"DEBUG: Settings file exists: {os.path.exists('settings.json')}")
         # Message tracking
         self.current_warnings = []
         self.current_errors = []
         self.last_status_message = ""
-        self.flash_timer = None  # Add flash timer
-        
+        self.flash_timer = QTimer(self)
+        self.flash_timer.setInterval(400)
+        self.flash_timer.timeout.connect(self._toggle_flash)
+
+        self._flash_state = False
         # Track the last valid position count
         self.last_valid_positions = 9  # Default
         self.measurement_qualities = {}  # {(channel, position): {'rating': 'PASS/CAUTION/RETAKE', 'score': float, 'uuid': str}}
@@ -74,7 +80,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         # Set background image
-        self.set_background_image_opaque("banner_500x680.png", opacity=0.3)
+       # self.set_background_image_opaque("banner_500x680.png", opacity=0.3)
         
         # Main layout
         main_layout = QVBoxLayout(central_widget)
@@ -154,7 +160,7 @@ class MainWindow(QMainWindow):
         # Configure spacing for better appearance
         checkbox_layout.setHorizontalSpacing(18)
         checkbox_layout.setVerticalSpacing(8)
-        checkbox_layout.setContentsMargins(55, 8, 15, 8)
+        checkbox_layout.setContentsMargins(8, 8, 15, 8)
 
         # Make all columns the same width
         for col in range(4):
@@ -187,21 +193,22 @@ class MainWindow(QMainWindow):
                 }
             """)
             
-            checkbox_layout.addWidget(checkbox, i // columns, i % columns, Qt.AlignLeft)
+            checkbox_layout.addWidget(checkbox, i // columns, i % columns, Qt.AlignCenter)
             self.channel_checkboxes[abbr] = checkbox
 
         # Set preferred size for the container
-        checkbox_widget.setMinimumWidth(420)
-        checkbox_widget.setMaximumWidth(500)
-        checkbox_widget.setFixedHeight(170)
-        main_layout.addWidget(checkbox_widget, alignment=Qt.AlignCenter)
+      #  checkbox_widget.setMinimumWidth(420)
+     #   checkbox_widget.setMaximumWidth(500)
+        checkbox_widget.setMinimumSize(500, 200)
+        main_layout.addWidget(checkbox_widget, alignment=Qt.AlignTop)
         main_layout.addSpacing(10)
  
         # ───────────────── num-positions row ───────────────── #
         pos_container = QWidget()
         pos_container.setStyleSheet("background: transparent;")
+        
         pos_layout = QHBoxLayout(pos_container)
-        pos_layout.setContentsMargins(0, 0, 0, 0)
+        pos_layout.setContentsMargins(20, 0, 0, 0)
 
         pos_label = QLabel("Number of Positions:")
         pos_label.setStyleSheet("color: white; font-weight: bold;")
@@ -212,7 +219,7 @@ class MainWindow(QMainWindow):
         self.pos_selector = QComboBox()
         self.pos_selector.addItems(["1", "3", "4", "5", "6", "7", "8", "9"])
         self.pos_selector.setCurrentText("9")
-       # self.pos_selector.setMaximumWidth(70)
+        self.pos_selector.setMaximumWidth(70)
 
         self.pos_selector.setStyleSheet("""
         /* ========== CLOSED COMBO ========== */
@@ -226,30 +233,42 @@ class MainWindow(QMainWindow):
             font: 'arial'; /* font family       */
         }
 
+
         """)
 
 
         pos_layout.addWidget(self.pos_selector)
 
-        # Grid widget container with fixed size
+        # Grid widget container 
         grid_container = QWidget()
-        grid_container.setFixedSize(220, 160)
         grid_container.setStyleSheet("background: transparent;")
+       # grid_container.setMaximumHeight(260)
+        grid_container.setSizePolicy(QSizePolicy.Expanding,
+                                QSizePolicy.Expanding)
+
         grid_container_layout = QVBoxLayout(grid_container)
         grid_container_layout.setContentsMargins(0, 0, 0, 0)
         
         # Initial grid
         n = int(self.pos_selector.currentText())
         self.grid_widget = GridWidget(positions=n, current_pos=self.measurement_state['current_position'])
-        self.grid_widget.setMinimumSize(220, 160)
+     #   self.grid_widget.setMinimumSize(0,0)
+
+        self.grid_widget.setSizePolicy(QSizePolicy.Expanding,
+                                    QSizePolicy.Expanding)
+       # self.grid_widget.setMaximumHeight(160)       # but no fixed width
+
         self.grid_widget.set_horizontal_stretch(1.3)
-        grid_container_layout.addWidget(self.grid_widget, alignment=Qt.AlignCenter)
+        grid_container_layout.addWidget(self.grid_widget)
 
-        pos_layout.addSpacing(0)
-        pos_layout.addWidget(grid_container, alignment=Qt.AlignCenter)
+        pos_layout.addWidget(grid_container)
+        # after you add the widgets to pos_layout  (label – combo – grid_container)
+        pos_layout.setStretchFactor(grid_container, 1)     # label column
 
-        main_layout.addWidget(pos_container, alignment=Qt.AlignCenter)
-        main_layout.addSpacing(-10)
+       # pos_layout.addSpacing(0)
+
+        main_layout.addWidget(pos_container)
+        main_layout.addSpacing(0)
 
         # React to user choice
         self.pos_selector.currentTextChanged.connect(self._rebuild_grid)
@@ -275,8 +294,8 @@ class MainWindow(QMainWindow):
         """)
         self.metrics_label.setTextFormat(Qt.RichText)
         self.metrics_label.setAlignment(Qt.AlignCenter)
-        self.metrics_label.setMinimumHeight(30)
-        self.metrics_label.hide()  # Initially hidden
+        self.metrics_label.setMinimumSize(120,30)
+       # self.metrics_label.hide()  # Initially hidden
         
         metrics_layout.addWidget(self.metrics_label)
         main_layout.addWidget(metrics_container, alignment=Qt.AlignCenter)
@@ -287,7 +306,7 @@ class MainWindow(QMainWindow):
         meas_container.setStyleSheet("background: transparent;")
         meas_layout = QHBoxLayout(meas_container)
         meas_layout.setContentsMargins(10, -10, 10, 10)
-        meas_layout.setSpacing(20)
+        meas_layout.setSpacing(10)
 
         # Load stimulus button
         self.load_button = Button("Load Stimulus File")
@@ -322,6 +341,7 @@ class MainWindow(QMainWindow):
 
         # Repeat button
         self.repeat_button = Button("Repeat Measurement")
+        self.repeat_button.setDisabled(True)
         self.repeat_button.clicked.connect(self.show_repeat_measurement_dialog)
         self.repeat_button.setStyleSheet("""
             QPushButton { 
@@ -411,9 +431,11 @@ class MainWindow(QMainWindow):
                 padding: 0 5px 0 5px;
             }
         ''')
-        status_group.setMinimumHeight(80)
-        status_group.setMaximumHeight(80)
-        status_group.setFixedWidth(450)
+       # status_group.setMinimumHeight(80)
+        #status_group.setMaximumHeight(80)
+        status_group.setMinimumSize(450, 80)
+      #  status_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
         # Status layout
         status_layout = QVBoxLayout()
         # Status label
@@ -432,7 +454,7 @@ class MainWindow(QMainWindow):
        # self.status_label.setFixedWidth(450)
         status_layout.addWidget(self.status_label)
         status_group.setLayout(status_layout)
-        main_layout.addWidget(status_group, alignment=Qt.AlignCenter)
+        main_layout.addWidget(status_group, alignment=Qt.AlignTop)
 #        main_layout.addWidget(self.status_label, alignment=Qt.AlignCenter)
 
         # Warning/Error panel
@@ -454,10 +476,11 @@ class MainWindow(QMainWindow):
                 padding: 0 5px;
             }
         ''')
-        error_group.setMinimumHeight(110)
-        error_group.setMaximumHeight(110)
-        error_group.setFixedWidth(450)
+       # error_group.setMinimumHeight(110)
+     #   error_group.setMaximumHeight(110)
+      #  error_group.setMinimumWidth(450)
 
+        error_group.setMinimumSize(450, 110)
         # --- layout inside the group --------------------------------------
         err_vbox = QVBoxLayout(error_group)
         err_vbox.setContentsMargins(10, 5, 5, 5)
@@ -534,16 +557,18 @@ class MainWindow(QMainWindow):
 
 
         # add the new group to your main layout
-        main_layout.addWidget(error_group, alignment=Qt.AlignCenter)
+        main_layout.addWidget(error_group, alignment=Qt.AlignTop)
         main_layout.addSpacing(0)
+
+        self._refresh_repeat_button()
 
         # load persisted settings and apply once
        # self.app_settings = SettingsDialog.load()
         #self.apply_settings()
 
         # Pass VLC GUI preference to message handler
-        from Qrew_common import set_vlc_gui_preference
-        set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
+       # from Qrew_common import set_vlc_gui_preference
+        #set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
         # Worker thread
         self.measurement_worker = None
         self.processing_worker = None
@@ -551,6 +576,21 @@ class MainWindow(QMainWindow):
         message_bridge.warning_received.connect(self.add_warning)
         message_bridge.error_received.connect(self.add_error)
         QTimer.singleShot(1000, self.load_existing_measurement_qualities)  # Delay to ensure REW is connected
+
+    def resizeEvent(self, ev):
+        self.set_background_image()
+        super().resizeEvent(ev)
+
+    def _toggle_flash(self):
+        """Centralized flash toggle to avoid state issues"""
+        self._flash_state = not self._flash_state
+        if hasattr(self, 'grid_widget'):
+            self.grid_widget.set_flash(self._flash_state)
+
+    def _refresh_repeat_button(self):
+        """Enable the Repeat button only if a valid stimulus WAV is set."""
+        path = getattr(Qrew_common, "selected_stimulus_path", "")
+        self.repeat_button.setEnabled(bool(path) and os.path.exists(path))
 
     def _set_channel_header(self, cfg_name: str):
         """Update the header to show current speaker configuration."""
@@ -583,10 +623,11 @@ class MainWindow(QMainWindow):
         
         # Create new grid widget
         self.grid_widget = GridWidget(positions=n, current_pos=self.measurement_state['current_position'])
-        self.grid_widget.setMinimumSize(220, 160)
+        self.grid_widget.setSizePolicy(QSizePolicy.Expanding,
+                                    QSizePolicy.Expanding)
         self.grid_widget.set_horizontal_stretch(1.3)
         # Add to layout with center alignment
-        parent_layout.addWidget(self.grid_widget, alignment=Qt.AlignCenter)
+        parent_layout.addWidget(self.grid_widget)
         
         # Restore flash state if it was active
         if was_flashing:
@@ -595,20 +636,15 @@ class MainWindow(QMainWindow):
             if not self.flash_timer.isActive():
                 self.flash_timer.start(400)
 
-    def update_grid_flash(self, flash_on):
-        """Update grid flash state"""
-        if flash_on:
-            # Start flash timer
-            if not self.flash_timer:
-                self.flash_timer = QTimer()
-                self.flash_timer.timeout.connect(self.toggle_flash)
-            self.flash_timer.start(400)  # Flash every 400ms
-            self.grid_widget.set_flash(True)
+    def update_grid_flash(self, on: bool):
+        """Start or stop the single flashing timer."""
+        if on:
+            if not self.flash_timer.isActive():
+                self.flash_timer.start()
         else:
-            # Stop flash timer
-            if self.flash_timer:
+            if self.flash_timer.isActive():
                 self.flash_timer.stop()
-            self.grid_widget.set_flash(False)
+                self.grid_widget.set_flash(False)
 
     def toggle_flash(self):
         """Toggle flash state"""
@@ -619,57 +655,52 @@ class MainWindow(QMainWindow):
         """Update grid current position"""
         self.grid_widget.set_current_pos(position)
 
-    def update_metrics_display(self, metrics):
-        """Update the metrics display with color-coded rating"""
+    def update_metrics_display(self, metrics: dict):
         try:
-            score = metrics.get("score", 0)
-            rating = metrics.get("rating", "Unknown")
-            measurement_uuid = metrics.get("uuid", None)
-            metrics_detail = metrics.get("detail", None)
-            # Track the measurement quality for current measurement
-            if hasattr(self, 'measurement_state') and self.measurement_state.get('running', False):
-                current_ch = self.measurement_state['channels'][max(0, self.measurement_state['channel_index'] - 1)]
-                current_pos = self.measurement_state['current_position']
-                
-                if measurement_uuid:
-                    self.measurement_qualities[(current_ch, current_pos)] = {
-                        'rating': rating,
-                        'score': score,
-                        'uuid': measurement_uuid,
-                        'detail': metrics_detail,
-                        'title': f"{current_ch}_pos{current_pos}"
-                    }
-                    print(f"Tracked quality for {current_ch}_pos{current_pos}: {rating} ({score:.1f}) UUID: {measurement_uuid}")
-                
-            # Choose color based on rating
-            if rating == "PASS":
-                color = "#00ff00"  # Green
-            elif rating == "CAUTION":
-                color = "#ffff00"  # Yellow
-            elif rating == "RETAKE":
-                color = "#ff0000"  # Red
-            else:
-                color = "#ffffff"  # White for unknown
-            
-            # Create HTML formatted text
-            metrics_html = f'<span style="color: {color}; font-size: 16px; font-weight: bold;">{rating}</span> <span style="color: #ccc; font-size: 12px;">({score:.1f})</span>'
-            
-            self.metrics_label.setText(metrics_html)
-            self.metrics_label.show()
-            
-        except Exception as e:
-            print(f"Error updating metrics display: {e}")
+            score   = metrics.get("score", 0)
+            rating  = metrics.get("rating", "Unknown")
+            channel = metrics.get("channel")          # ← from result
+            position= metrics.get("position")
+            uuid    = metrics.get("uuid")
 
+            # Track quality
+            if channel is not None and position is not None and uuid:
+                self.measurement_qualities[(channel, position)] = {
+                    "rating": rating,
+                    "score" : score,
+                    "uuid"  : uuid,
+                    "detail": metrics.get("detail"),
+                    "title" : f"{channel}_pos{position}",
+                }
+                print(f"Tracked quality for {channel}_pos{position}: {rating} ({score:.1f}) UUID: {uuid}")
+
+
+            # Choose colour …
+            colour = {
+                "PASS":   "#00ff00",
+                "CAUTION":"#ffff00",
+                "RETAKE":"#ff0000",
+            }.get(rating, "#ffffff")
+
+            html = (f"<span style='color:{colour}; font-size:16px;font-weight:bold;'>"
+                    f"{rating}</span> "
+                    f"<span style='color:#ccc;font-size:12px;'>({score:.1f})</span>")
+
+            self.metrics_label.setText(html)
+            self.metrics_label.show()
+
+        except Exception as e:
+            print("Error updating metrics display:", e)
 
     def update_quality_entry(self, result: dict):
         """
         Update self.measurement_qualities for (channel, position)
         with the score/rating of the *new* measurement.
         """
-        channel   = result['channel']     # or however you encode it
-        position  = result['position']
-        key       = (channel, position)
-
+       # channel   = result['channel']     # or however you encode it
+        #position  = result['position']
+      #  key       = (channel, position)
+        key = (result['channel'], result['position'])
         # overwrite / create
         self.measurement_qualities[key] = {
             "rating": result['rating'],
@@ -756,13 +787,31 @@ class MainWindow(QMainWindow):
         self.current_errors.clear()  
         self.update_error_display()
 
-    def set_background_image(self, image_path):
-        if os.path.exists(image_path):
-            pixmap = QPixmap(image_path)
-            pixmap = pixmap.scaled(500, 800, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            palette = QPalette()
-            palette.setBrush(QPalette.Background, QBrush(pixmap))
-            self.setPalette(palette)
+    def set_background_image(self):
+        if self.bg_source.isNull():
+            return                                      # file missing?
+
+        # -- scale to the *current* window size --------
+        scaled = self.bg_source.scaled(
+            self.size(),                       # full client area
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation
+        )
+
+        # -- stamp the scaled image onto a transparent canvas
+        canvas = QPixmap(scaled.size())
+        canvas.fill(Qt.transparent)
+
+        p = QPainter(canvas)
+        p.setOpacity(self.bg_opacity)         # 0.0 … 1.0
+        p.drawPixmap(0, 0, scaled)
+        p.end()
+
+        # -- install the brush --------------------------
+        pal = self.palette()
+        pal.setBrush(QPalette.Window, QBrush(canvas))
+        self.setPalette(pal)
+        self.setAutoFillBackground(True)       # important
 
 
     def set_background_image_opaque(self, image_path, opacity=0.35):
@@ -778,7 +827,7 @@ class MainWindow(QMainWindow):
 
         # 1) load & scale
         pix = QPixmap(image_path).scaled(
-            500, 800,
+            self.width(), self.height(),
             Qt.KeepAspectRatioByExpanding,
             Qt.SmoothTransformation
         )
@@ -804,30 +853,37 @@ class MainWindow(QMainWindow):
         #self.app_settings['speaker_config'] = 'Manual Select'
         #SettingsDialog.save(self.app_settings)
         qs.set('speaker_config', 'Manual Select')
-        
+
     def load_stimulus_file(self):
         # Get last directory from settings, default to empty string
         last_dir = self.qsettings.value("last_stimulus_directory", "")
-        file_path, _ = QFileDialog.getOpenFileName(
+        file_path = QrewFileDialog.getOpenFileName(
+        #file_path = get_open_file(
             self,
             "Select Stimulus WAV File",
             last_dir,
             "WAV Files (*.wav);;All Files (*.*)"
         )
-        if file_path:
-            # Normalize paths for the current OS
-            Qrew_common.selected_stimulus_path = os.path.normpath(file_path)
-            Qrew_common.stimulus_dir = os.path.normpath(os.path.dirname(file_path))
-            self.qsettings.setValue("last_stimulus_directory", Qrew_common.stimulus_dir)
-            self.status_label.setText(f"Selected stimulus: {os.path.basename(file_path)}")
-    
+        if not file_path:
+            # User pressed Cancel – keep the previous state but refresh button
+            self._refresh_repeat_button()
+            return
+        
+
+        # Normalize paths for the current OS
+        Qrew_common.selected_stimulus_path = os.path.normpath(file_path)
+        Qrew_common.stimulus_dir = os.path.normpath(os.path.dirname(file_path))
+        self.qsettings.setValue("last_stimulus_directory", Qrew_common.stimulus_dir)
+        self.status_label.setText(f"Selected stimulus: {os.path.basename(file_path)}")
+        self._refresh_repeat_button()  
+
     def show_error_message(self, title, message):
         """Thread-safe method to show error messages"""
-        QMessageBox.critical(self, title, message)
+        QrewMessageBox.critical(self, title, message)
     
     def on_start(self):
         if not Qrew_common.selected_stimulus_path:
-            QMessageBox.critical(self, "No Stimulus File", "Please load a stimulus WAV file first.")
+            QrewMessageBox.critical(self, "No Stimulus File", "Please load a stimulus WAV file first.")
             return
         
         try:
@@ -835,7 +891,7 @@ class MainWindow(QMainWindow):
             if num_pos <= 0:
                 raise ValueError
         except ValueError:
-                QMessageBox.critical(self, "Invalid Input",
+                QrewMessageBox.critical(self, "Invalid Input",
                              "Select 1 – 9 microphone positions.")            
                 return
         
@@ -844,7 +900,7 @@ class MainWindow(QMainWindow):
                 
         selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
         if not selected:
-            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            QrewMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
             return
 
         # Check for existing measurements and show confirmation dialog
@@ -859,10 +915,10 @@ class MainWindow(QMainWindow):
             self.status_label.setText('Clearing existing measurements...')
             success, count_deleted, error_msg = delete_all_measurements(status_callback=self.update_status)
             if not success:
-                QMessageBox.critical(self, 'Delete Failed', f'Failed to delete measurements:\n{error_msg}')
+                QrewMessageBox.critical(self, 'Delete Failed', f'Failed to delete measurements:\n{error_msg}')
                 return
             if count_deleted > 0:
-                QMessageBox.information(self, 'Measurements Cleared', f'Successfully deleted {count_deleted} existing measurements.')
+                QrewMessageBox.information(self, 'Measurements Cleared', f'Successfully deleted {count_deleted} existing measurements.')
                 
         # Reset measurement state
         self.measurement_state.update({
@@ -890,28 +946,39 @@ class MainWindow(QMainWindow):
         self.show_position_dialog(0)
     
     def show_position_dialog(self, position):
+        """Show position dialog and handle user response"""
         dialog = PositionDialog(position, self)
+        
         if dialog.exec_():
+            # User clicked OK - continue measurement
             # For repeat mode, don't reset channel_index
             if not self.measurement_state.get('repeat_mode', False):
-                self.measurement_state['channel_index'] = 0
+                if position == 0:
+                    # First position in normal mode - reset channel index
+                    self.measurement_state['channel_index'] = 0
             
-            if position == 0 and not self.measurement_state.get('repeat_mode', False):
-                # First time - start the worker (only for normal mode)
+            # Update the current position in state
+            self.measurement_state['current_position'] = position
+            
+            # Start or continue the measurement
+            if not self.measurement_worker or not self.measurement_worker.isRunning():
+                # No worker running - start a new one
                 self.start_worker()
-            elif self.measurement_worker and self.measurement_worker.isRunning():
-                    self.measurement_worker.resume_after_position_dialog()
             else:
-                # For repeat mode, just resume the measurement
-                self.start_worker()
+                # Worker is already running - just signal it to continue
+                # The worker should be waiting for this signal
+                self.measurement_worker.continue_after_dialog()
         else:
             # User cancelled - stop everything
             self.measurement_state['running'] = False
             self.start_button.setEnabled(True)
+            # Stop flash
             if self.flash_timer:
                 self.flash_timer.stop()
             self.grid_widget.set_flash(False)
-
+            # Stop worker if running
+            if self.measurement_worker and self.measurement_worker.isRunning():
+                self.measurement_worker.stop()
     
     def start_worker(self):
         self.measurement_worker = MeasurementWorker(self.measurement_state, self)
@@ -922,22 +989,53 @@ class MainWindow(QMainWindow):
         self.measurement_worker.grid_flash_signal.connect(self.update_grid_flash)
         self.measurement_worker.grid_position_signal.connect(self.update_grid_position)
         self.measurement_worker.metrics_update.connect(self.update_metrics_display)
-        self.measurement_worker.metrics_update.connect(self.update_quality_entry)
+        self.measurement_worker.metrics_update.connect(self.update_quality_entry, Qt.DirectConnection)
         self.measurement_worker.show_quality_dialog.connect(self.show_measurement_quality_dialog)  
 
         self.measurement_worker.start()
-    
+
+
     def on_measurement_finished(self):
-        """Called when all measurements are complete"""
         self.start_button.setEnabled(True)
-        self.status_label.setText("Measurement process completed.")
+        save_after_repeat = qs.get("save_after_repeat", False)
+
+        repeat = self.measurement_state.pop("repeat_mode", False)
+        self.build_retake_caution_list()          # refresh list first
+
+        if repeat:
+            if not self.retake_pairs:             # everything passed!
+                self.status_label.setText("All repeat measurements passed.")
+                if save_after_repeat:
+                    self.show_save_measurements_dialog()
+            else:
+                self.status_label.setText(
+                    "Repeat measurements completed – some still need re-take."
+                )
+        else:
+            self.status_label.setText("Measurement process completed.")
+            self.show_save_measurements_dialog()
+
         if self.flash_timer:
             self.flash_timer.stop()
         self.grid_widget.set_flash(False)
         if self.measurement_worker:
             self.measurement_worker = None
-        # Show save dialog
-        self.show_save_measurements_dialog()
+
+    def build_retake_caution_list(self):
+        """
+        Re-scan self.measurement_qualities and build a list of
+        (channel, position) pairs that are still rated RETAKE or CAUTION.
+
+        The list is stored in self.retake_pairs so the Repeat-Measurement
+        dialog can use it later.
+        """
+        qualities = getattr(self, "measurement_qualities", {})
+        self.retake_pairs = [
+            (ch, pos)
+            for (ch, pos), q in qualities.items()
+            if q.get("rating") in ("RETAKE", "CAUTION")
+        ]
+
 
     def show_save_measurements_dialog(self):
         """Show dialog to save raw measurements"""
@@ -965,14 +1063,14 @@ class MainWindow(QMainWindow):
             
             if success:
                 self.update_status(f"Raw measurements saved successfully to: {os.path.basename(file_path)}")
-                QMessageBox.information(
+                QrewMessageBox.information(
                     self, 
                     "Save Successful", 
                     f"Raw measurements saved to:\n{file_path}"
                 )
             else:
                 self.update_status(f"Failed to save measurements: {error_msg}")
-                QMessageBox.critical(
+                QrewMessageBox.critical(
                     self, 
                     "Save Failed", 
                     f"Failed to save measurements:\n{error_msg}"
@@ -981,7 +1079,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             error_msg = f"Unexpected error saving measurements: {str(e)}"
             self.update_status(error_msg)
-            QMessageBox.critical(self, "Save Error", error_msg)
+            QrewMessageBox.critical(self, "Save Error", error_msg)
         
         finally:
             # Re-enable buttons
@@ -994,7 +1092,7 @@ class MainWindow(QMainWindow):
         """Handle cross correlation alignment button click"""
         selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
         if not selected:
-            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            QrewMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
             return
         
         self.start_processing(selected, 'cross_corr_only')
@@ -1003,7 +1101,7 @@ class MainWindow(QMainWindow):
         """Handle vector average button click"""
         selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
         if not selected:
-            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            QrewMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
             return
         
         self.start_processing(selected, 'vector_avg_only')
@@ -1012,7 +1110,7 @@ class MainWindow(QMainWindow):
         """Handle full processing (cross corr + vector avg) button click"""
         selected = [abbr for abbr, checkbox in self.channel_checkboxes.items() if checkbox.isChecked()]
         if not selected:
-            QMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
+            QrewMessageBox.critical(self, "No Channels", "Please select at least one speaker channel.")
             return
         
         self.start_processing(selected, 'full')
@@ -1023,7 +1121,7 @@ class MainWindow(QMainWindow):
         channels_with_data = get_selected_channels_with_measurements_uuid(selected_channels)
         
         if not channels_with_data:
-            QMessageBox.critical(self, "No Measurements", 
+            QrewMessageBox.critical(self, "No Measurements", 
                             "No measurements found for the selected channels. Please run measurements first.")
             return
         # Convert to the format expected by processing worker (just UUIDs)
@@ -1088,7 +1186,7 @@ class MainWindow(QMainWindow):
         print("DEBUG positions:", self.last_valid_positions)
 
         if not self.measurement_qualities:
-            QMessageBox.information(self, 'No Measurements', 'No completed measurements available for repeat.')
+            QrewMessageBox.information(self, 'No Measurements', 'No completed measurements available for repeat.')
             return
         
         dialog = RepeatMeasurementDialog(
@@ -1105,6 +1203,19 @@ class MainWindow(QMainWindow):
 
     def handle_repeat_measurements(self, selected_measurements):
         """Handle the repeat measurement process."""
+        if not Qrew_common.selected_stimulus_path:
+            if QrewMessageBox.question(
+                    self, "Stimulus file required",
+                    "You must load the sweep WAV before repeating measurements.\n"
+                    "Load it now?",
+                    QrewMessageBox.Yes | QrewMessageBox.No, QrewMessageBox.Yes
+            ) == QrewMessageBox.Yes:
+                self.load_stimulus_file()          # your existing loader
+                if not Qrew_common.selected_stimulus_path:
+                    return                         # user cancelled
+            else:
+                return                             # aborted by user
+
         # Show deletion confirmation
         delete_dialog = DeleteSelectedMeasurementsDialog(selected_measurements, self)
         if delete_dialog.exec_() != QDialog.Accepted:
@@ -1116,7 +1227,7 @@ class MainWindow(QMainWindow):
         deleted_count, failed_count = delete_measurements_by_uuid(uuid_list, self.update_status)
         
         if failed_count > 0:
-            QMessageBox.warning(self, 'Deletion Issues', 
+            QrewMessageBox.warning(self, 'Deletion Issues', 
                             f'Deleted {deleted_count} measurements, but {failed_count} failed to delete.')
         
         # Remove deleted measurements from quality tracking
@@ -1125,12 +1236,11 @@ class MainWindow(QMainWindow):
             if key in self.measurement_qualities:
                 del self.measurement_qualities[key]
         
-        # Prepare for remeasurement
-       # channels_to_remeasure = list(set(m['channel'] for m in selected_measurements))
-        #positions_to_remeasure = list(set(m['position'] for m in selected_measurements))
-        # Prepare remeasurement pairs (channel, position) tuples
-        remeasure_pairs = [(measurements['channel'], measurements['position']) for measurements in selected_measurements]
-        
+
+        remeasure_pairs = []
+        for m in selected_measurements:
+            remeasure_pairs.append((m['channel'], m['position'], m['uuid']))  # keep uuid
+
         # Update measurement state for remeasurement
         self.measurement_state.update({
             'channels': [],
@@ -1140,7 +1250,7 @@ class MainWindow(QMainWindow):
             'running': True,
             'channel_index': 0,
             'repeat_mode': True,
-            'remeasure_pairs': remeasure_pairs.copy(),  # Make a copy
+            'remeasure_pairs': remeasure_pairs,
             'current_remeasure_pair': None,
             'pair_completed': False,
             're_idx': 0
@@ -1226,11 +1336,10 @@ class MainWindow(QMainWindow):
                 self.measurement_worker.handle_quality_dialog_response('stop')
 
     def open_settings_dialog(self):
-        current = getattr(self, "app_settings", {})
-        dlg = SettingsDialog(current, self)
+        dlg = SettingsDialog(self)
         if dlg.exec_():
-            for key, value in dlg.values().items():
-                qs.set(key, value)          # persist + share
+            #for key, value in dlg.values().items():
+             #   qs.set(key, value)          # persist + share
             self.apply_settings()           # read straight from qs
 
 
@@ -1240,8 +1349,7 @@ class MainWindow(QMainWindow):
             QToolTip.setFont(QFont("Arial", 10))
         else:
             QToolTip.hideText()
-        cfg_name = qs.get("speaker_config",
-                                        "Manual Select")
+        cfg_name = qs.get("speaker_config", "Manual Select")
         self._set_channel_header(cfg_name)
 
         cfg_map  = get_speaker_configs()
@@ -1249,10 +1357,9 @@ class MainWindow(QMainWindow):
             wanted = set(cfg_map[cfg_name])
             for lbl, cb in self.channel_checkboxes.items():
                 cb.setChecked(lbl in wanted)
-        # Update preferences in message handler and vlc helper
-        from Qrew_common import set_vlc_gui_preference, set_vlc_backend
-        set_vlc_gui_preference(self.app_settings.get('show_vlc_gui', False))
-        set_vlc_backend(self.app_settings.get('vlc_backend', 'auto'))
+     #   qs.get('show_vlc_gui', False)
+      #  qs.get('vlc_backend', 'auto')
+       # qs.get('save_after_repeat', False)
 
 def wait_for_rew_qt():
     """Wait for REW connection using custom dialog"""
@@ -1273,7 +1380,11 @@ if __name__ == "__main__":
     
     # Create Qt application
     app = QApplication(sys.argv)
-    
+    app.setStyleSheet("""
+        * {
+            font-family: "Monaco";
+        }
+    """)
     # Check REW connection
     wait_for_rew_qt()
     

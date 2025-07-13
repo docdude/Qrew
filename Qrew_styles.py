@@ -6,6 +6,7 @@ from PyQt5 import QtCore, QtGui
 # HTML Icons for UI
 HTML_ICONS = {
     'warning': '&#9888;',        # ⚠️
+    'no_entry': '&#128683;',
     'check': '&#10004;',         # ✓
     'cross': '&#10060;',         # ❌
     'circle_red': '&#11044;',    # ⭕ (colored via CSS)
@@ -22,6 +23,7 @@ HTML_ICONS = {
     'play': '&#9654;',           # ▶
     'stop': '&#9632;',           # ■
     'pause': '&#9208;',          # ⏸
+    'raised_hand': '&#9995;'
 }
 
 def tint(pix: QtGui.QPixmap, color: QtGui.QColor) -> QtGui.QPixmap:

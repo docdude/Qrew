@@ -293,15 +293,15 @@ def get_all_measurements_with_uuid():
         measurement_uuids = response.json()
         
         measurements = []
-        for uuid in measurement_uuids:
+        for id in measurement_uuids:
             try:
-                meta_response = requests.get(f"{REW_API_BASE_URL}/measurements/{uuid}")
+                meta_response = requests.get(f"{REW_API_BASE_URL}/measurements/{id}")
                 meta_response.raise_for_status()
                 meta = meta_response.json()
-                meta["uuid"] = uuid
+               # meta["uuid"] = uuid
                 measurements.append(meta)
             except Exception as e:
-                print(f"Error getting metadata for UUID {uuid}: {e}")
+                print(f"Error getting metadata for ID {id}: {e}")
                 continue
         
         return measurements, len(measurements)
@@ -739,6 +739,102 @@ def unsubscribe_from_rta_distortion():
     except Exception as e:
         print(f"❌ Failed to unsubscribe from RTA distortion: {e}")
         return False
+
+def set_rta_configuration(show_gui: bool = True) -> bool:
+    """
+    Push an RTA configuration that is well-suited for THD / THD-N work.
+    Returns True on success.
+    """
+    payload = {
+            # ── Spectrum display ──────────────────────────────────────────
+            "mode":              "RTA 1/24 octave",      # finer bins = better harmonic ID
+            "smoothing":         "None",                 # keep raw
+            "fftLength":         "64k",
+            "window":            "Rectangular",          # needed for coherent THD
+            # ── Averaging ─────────────────────────────────────────────────
+            "averaging":         "None",                 # rely on coherent / x-corr modes
+            "maximumOverlap":    "93.75%",               # fastest update
+            # ── Distortion calculation ───────────────────────────────────
+            "calcDistortionEnabled": True,
+            "fundamentalFromSineGen": True,              # auto-tracks REW’s generator
+            # ── Auto-stop not used; we stop when VLC finishes ────────────
+            "stopAt":            False,
+            "stopAtValue":       100,
+            # ── Misc ──────────────────────────────────────────────────────
+            "use64BitFFT":       True,
+            "restartCaptureOnGeneratorChange": False,
+            "stopGeneratorWithRTA": False,        # keep generator running if user wants GUI
+            "adjustRTALevels":   False
+        }
+
+    try:
+        r = requests.post(f"{REW_API_BASE_URL}/rta/configuration", json=payload, timeout=5)
+        r.raise_for_status()
+        print("✅ RTA configured for distortion measurement")
+        return True
+    except Exception as e:
+        print("❌  Could not configure RTA:", e)
+        return False
+
+    
+def set_rta_distortion_configuration_sine():
+    "Set RTA Distortion for Single Tone Sine Signal"
+    try:
+        payload = {
+            "lowPass": 20000,
+            "highPass": 20,
+            "enableLowPass": True,
+            "enableHighPass": True,
+
+            "useManualFundamental": False,          # let REW detect the sine
+            "useAES17StandardNotch": False,         # only needed for electronics THD+N
+
+            "showHarmonicPhase": True,
+            "highlightFundamental": True,
+            "distortionUnit": "percent",
+
+            "useCoherentAveraging": True,           # big S/N improvement
+            "useCrossCorrelationAveraging": False,  #unnecessary with single-tone
+            "monitorClockRateMatch": True           # warns if sound-card drifts
+            }
+
+        response = requests.post(f"{REW_API_BASE_URL}/rta/distortion-configuration", json=payload)
+        print("✅ RTA distortion configured for single tone sine")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to configure RTA distortion: {e}")
+        return False   
+
+def set_rta_distortion_configuration_sweep():
+    "Set RTA Distortion for Sweep Signal"
+    try:
+        payload = {
+            "lowPass": 20000,
+            "highPass": 20,
+            "enableLowPass": True,
+            "enableHighPass": True,
+
+            "useManualFundamental": True,           # fix the Vrms of the sweep
+            "manualFundamentalVrms": -12.0,         # set to the sweep’s RMS level
+            "useAES17StandardNotch": False,
+
+            "showHarmonicPhase": False,             # phase is meaningless while sweeping
+            "highlightFundamental": True,
+            "distortionUnit": "percent",
+
+            "useCoherentAveraging": False,          # sweep = non-stationary
+            "useCrossCorrelationAveraging": True,   # helps noise rejection
+            "monitorClockRateMatch": True
+            }
+
+        response = requests.post(f"{REW_API_BASE_URL}/rta/distortion-configuration", json=payload)
+        print("✅ RTA distortion configureed")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to configure RTA distortion: {e}")
+        return False   
+    
+
 
 def start_rta():
     """Start RTA mode"""
