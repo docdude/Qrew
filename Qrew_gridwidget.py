@@ -39,7 +39,19 @@ class GridWidget(QtWidgets.QWidget):
         self.horizontal_stretch = stretch
         self.update()
 
-    def paintEvent(self, _):
+    def paintEvent(self, event):
+        if not self.isVisible():          # <-- guard ①
+            return
+        if getattr(self, "_painting", False):
+            return                        # <-- guard ②   (re-entrancy blocker)
+        self._painting = True
+        try:
+            p = QtGui.QPainter(self)
+            ...
+        finally:
+            p.end()
+            self._painting = False
+
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         

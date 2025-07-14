@@ -68,6 +68,9 @@ SPEAKER_CONFIGS = {
     "9.1.6 Atmos (wides)": ["FL", "FR", "C", "SW1", "SLA", "SRA",
                             "SBL", "SBR", "FWL", "FWR",
                             "TFL", "TFR", "TML", "TMR", "TRL", "TRR"],
+    "11.1.8 Atmos":      ["FL", "FR", "C", "FHL", "FHR", "SW1", "SLA", "SRA",
+                            "SBL", "SBR", "SDL", "SDR", "FWL", "FWR",
+                            "TFL", "TFR", "TRL", "TRR", "RHL", "RHR"],
 
     # ───── Auro-3D (13-strain) ─────
     "Auro-3D 9.1":  ["FL", "FR", "C", "SW1", "SLA", "SRA",

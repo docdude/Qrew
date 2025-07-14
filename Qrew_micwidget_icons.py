@@ -9,7 +9,8 @@ class MicPositionWidget(QWidget):
     def __init__(self, image_path, layout_path):
         super().__init__()
         self.setWindowTitle("Home Theater Speaker + Mic Layout")
-        self.background = QPixmap(image_path)
+        self.original_background = QPixmap(image_path)   # pristine copy
+        self.background           = self.original_background          # keep existing name
         self.original_size = self.background.size()
         self.current_scale = 1.0
         self.setFixedSize(self.background.size())
@@ -26,6 +27,9 @@ class MicPositionWidget(QWidget):
         self.active_speakers = set()
         self.visible_positions = 9  # Default to show all positions
         self.selected_channels = set()  # Track selected channels
+        self.flash_state = False  # Track flash state
+        self.show_speaker_icons = True  # Control speaker icon visibility
+        
 
         self.icon_size = 85
         self.base_icon_size = 85  # Store original size for scaling
@@ -37,30 +41,96 @@ class MicPositionWidget(QWidget):
         self.animation_timer.start(33)
 
         self.init_labels()
-        
+
+
+    def set_flash_state(self, is_flashing):
+        """Set whether animations should be flashing"""
+        self.flash_state = is_flashing
+        self.update()
+
+    def set_show_speaker_icons(self, show):
+        """Control whether speaker icons are shown"""
+        self.show_speaker_icons = show
+        self.update_speaker_visibility()
+
+    def update_speaker_visibility(self):
+        """Update visibility of speaker labels based on selection"""
+        for key, label in self.labels.items():
+            # Simply show or hide based on selection
+            if key in self.selected_channels:
+                label.show()
+            else:
+                label.hide()
+
     def set_scale(self, scale_factor):
         """Scale the entire widget and all its elements"""
+        if scale_factor <= 0:
+            scale_factor = 0.1  # Minimum scale
+        scale_factor = max(0.05, scale_factor - 0.002)
+
         self.current_scale = scale_factor
         
         # Scale background
         new_size = self.original_size * scale_factor
-        self.background = QPixmap(self.background).scaled(
-            new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+      #  self.background = QPixmap(self.background).scaled(
+       #     new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+       # )
+        self.setFixedSize(new_size)          # size of the widget itself
+
+        # ----------------------------------------------------------------
+        #  Hi-DPI fix:
+        #  Scale the ORIGINAL picture to *physical* pixels and then
+        #  tag the pixmap with its DPR so Qt will blit it 1:1.
+        # ----------------------------------------------------------------
+        dpr = self.devicePixelRatioF()       # usually 1.0 or 2.0 on macOS
+        phys_w = int(new_size.width()  * dpr)
+        phys_h = int(new_size.height() * dpr)
+
+        scaled_img = self.original_background.toImage().scaled(
+            phys_w, phys_h,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation           # high-quality resize once
         )
-        
+        sharp_pix = QPixmap.fromImage(scaled_img)
+        sharp_pix.setDevicePixelRatio(dpr)   # <<< tell Qt the real DPR
+        self.background = sharp_pix
         # Scale icon size
-        self.icon_size = int(self.base_icon_size * scale_factor)
+        self.icon_size = max(int(self.base_icon_size * scale_factor), 10)  # Minimum icon size
         
         # Resize widget
         self.setFixedSize(new_size)
         
+        # Store current selections before recreating
+        current_selected = self.selected_channels.copy()
+        current_visible_positions = self.visible_positions
+        
         # Recreate labels with new scale
         self.clear_labels()
         self.init_labels()
+        
+        # Restore selections and visibility
+        self.set_selected_channels(list(current_selected))
+        self.set_visible_positions(current_visible_positions)
+        
         self.update()
 
+
+    # Add new method to set visible positions from a specific list:
+    def set_visible_positions_list(self, position_list):
+        """Show only the positions specified in the list"""
+        # Update mic label visibility based on specific position list
+        for mic_id, label in self.mic_labels.items():
+            try:
+                mic_num = int(str(mic_id))
+                label.setVisible(mic_num in position_list)
+            except ValueError:
+                label.setVisible(False)  # Hide if can't parse as number
+        
+        self.update()
+    
+    # Keep the existing set_visible_positions method for normal operation:
     def set_visible_positions(self, num_positions):
-        """Show only the specified number of mic positions"""
+        """Show only the specified number of mic positions (0 to num_positions-1)"""
         self.visible_positions = num_positions
         
         # Update mic label visibility
@@ -73,31 +143,11 @@ class MicPositionWidget(QWidget):
         
         self.update()
 
+
     def set_selected_channels(self, channels):
         """Update which channels are selected (for highlighting)"""
-        self.selected_channels = set(channels)
-        
-        # Update speaker label styling
-        for key, label in self.labels.items():
-            if key in self.selected_channels:
-                # Highlight selected speakers
-                label.setStyleSheet("""
-                    QLabel {
-                        background-color: rgba(0, 255, 0, 100);
-                        border: 2px solid #00ff00;
-                        border-radius: 10px;
-                    }
-                """)
-            else:
-                # Normal styling for unselected
-                label.setStyleSheet("""
-                    QLabel {
-                        background-color: transparent;
-                        border: 1px solid #666;
-                        border-radius: 5px;
-                    }
-                """)
-        
+        self.selected_channels = set(channels)  
+        self.update_speaker_visibility()     
         self.update()
 
     def clear_labels(self):
@@ -124,13 +174,15 @@ class MicPositionWidget(QWidget):
                                        Qt.KeepAspectRatio, Qt.SmoothTransformation))
             else:
                 lbl.setText(key)
-                lbl.setStyleSheet("background-color: black; color: white; border-radius: 10px;")
+              #  lbl.setStyleSheet("background-color: black; color: white; border-radius: 10px;")
             
             lbl.setGeometry(x - self.icon_size // 2, y - self.icon_size // 2, 
                           self.icon_size, self.icon_size)
             lbl.setToolTip(data["name"])
             self.labels[key] = lbl
-            lbl.show()
+            # Only show if it's selected AND we're showing icons
+            lbl.hide()
+            #lbl.show()
 
         # Mic dots
         for mic_id, data in self.mics.items():
@@ -166,10 +218,24 @@ class MicPositionWidget(QWidget):
         self.active_speakers = set(keys)
 
     def paintEvent(self, event):
+        if not self.isVisible():          # <-- guard ①
+            return
+        if getattr(self, "_painting", False):
+            return                        # <-- guard ②   (re-entrancy blocker)
+        self._painting = True
+        try:
+            p = QPainter(self)
+            ...
+        finally:
+            p.end()
+            self._painting = False
         painter = QPainter(self)
         painter.drawPixmap(0, 0, self.background)
-        self.ripple_phase = (self.ripple_phase + 1) % 60
-
+        # Only animate ripple if flash state is true
+        if self.flash_state and (self.active_mic is not None or self.active_speakers):
+            self.ripple_phase = (self.ripple_phase + 1) % 60
+        else:
+            self.ripple_phase = 0  # Reset phase when not flashing
         # Scale animation elements
         base_radius = int(12 * self.current_scale)
         glow_radius = int(30 * self.current_scale)
@@ -190,31 +256,32 @@ class MicPositionWidget(QWidget):
                 painter.drawEllipse(QPoint(x, y), radius, radius)
 
         # Speaker animations  
-        for key in self.active_speakers:
-            if key in self.speakers:
-                x = int(self.speakers[key]["x"] * self.current_scale)
-                y = int(self.speakers[key]["y"] * self.current_scale)
+        if self.flash_state:
+            for key in self.active_speakers:
+                if key in self.speakers:
+                    x = int(self.speakers[key]["x"] * self.current_scale)
+                    y = int(self.speakers[key]["y"] * self.current_scale)
 
-                # Glow Effect
-                glow_color = QColor(0, 255, 0, 80)
-                painter.setBrush(glow_color)
-                painter.setPen(Qt.NoPen)
-                painter.drawEllipse(QPoint(x, y), glow_radius, glow_radius)
+                    # Glow Effect
+                    glow_color = QColor(0, 255, 0, 80)
+                    painter.setBrush(glow_color)
+                    painter.setPen(Qt.NoPen)
+                    painter.drawEllipse(QPoint(x, y), glow_radius, glow_radius)
 
-                # Pulse Ring Wave
-                steps = 4
-                offset_x = int(2 * self.current_scale)
-                offset_y = int(-1 * self.current_scale)
+                    # Pulse Ring Wave
+                    steps = 4
+                    offset_x = int(2 * self.current_scale)
+                    offset_y = int(-1 * self.current_scale)
 
-                for i in range(steps):
-                    phase = (self.ripple_phase + i * 20) % 60
-                    opacity = int(250 * (1 - phase / 60))
-                    radius = wave_base + int((phase / 60) * wave_max)
-                    pen = QPen(QColor(0, 255, 0, opacity))
-                    pen.setWidth(max(1, int(2 * self.current_scale)))
-                    painter.setPen(pen)
-                    painter.setBrush(Qt.NoBrush)
-                    painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
+                    for i in range(steps):
+                        phase = (self.ripple_phase + i * 20) % 60
+                        opacity = int(250 * (1 - phase / 60))
+                        radius = wave_base + int((phase / 60) * wave_max)
+                        pen = QPen(QColor(0, 255, 0, opacity))
+                        pen.setWidth(max(1, int(2 * self.current_scale)))
+                        painter.setPen(pen)
+                        painter.setBrush(Qt.NoBrush)
+                        painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -222,7 +289,8 @@ if __name__ == "__main__":
     widget.set_active_mic(0)
 
     # Test: Cycle mic + animate 2 speakers
-    test_speakers = ["TML", "FR"]
+   # test_speakers = ["TML", "FR"]
+    test_speakers = []
     mic_keys = list(widget.mic_labels.keys())
     mic_index = [0]
 

@@ -22,7 +22,7 @@ class MeasurementWorker(QThread):
     grid_position_signal = pyqtSignal(int)  # Add signal for grid position
     metrics_update = pyqtSignal(dict)  # Add signal for metrics
     show_quality_dialog = pyqtSignal(dict)  # Add this signal
-    visualization_update = pyqtSignal(int, list)  # position, active_speakers
+    visualization_update = pyqtSignal(int, list, bool)  # position, active_speakers
 
     def __init__(self, measurement_state, parent_window=None):
         super().__init__()
@@ -68,7 +68,11 @@ class MeasurementWorker(QThread):
             state['channel_index'] = 0
             state['current_position'] += 1
             self.current_retry = 0  # Reset retry count for new position
-            
+
+            # Clear any active animations before showing position dialog
+            self.grid_flash_signal.emit(False)
+            self.visualization_update.emit(pos, [], False)
+
             if state['current_position'] < state['num_positions']:
                 self._waiting_for_position_dialog = True
                 self.show_position_dialog.emit(state['current_position'])
@@ -86,7 +90,9 @@ class MeasurementWorker(QThread):
         # Update grid to show current position and start flash
         self.grid_position_signal.emit(pos)
         self.grid_flash_signal.emit(True)
-        self.visualization_update.emit(pos, [ch])
+        print(f"DEBUG: Measuring channel {ch} at position {pos}")
+
+        self.visualization_update.emit(pos, [ch], True)
 
         retry_msg = f" (Retry {self.current_retry + 1}/{self.max_retries})" if self.current_retry > 0 else ""
         self.status_update.emit(f"Starting measurement for {sample_name}{retry_msg}...")
@@ -148,6 +154,9 @@ class MeasurementWorker(QThread):
             state['pair_completed'] = False
 
             self.grid_flash_signal.emit(False)          # stop any previous flash
+            # Show position but no active speakers yet - maintain only selected repeat channels
+            self.visualization_update.emit(position, [], False)
+            
             self._waiting_for_position_dialog = True
 
             self.show_position_dialog.emit(position)    # user moves mic
@@ -159,6 +168,12 @@ class MeasurementWorker(QThread):
 
         self.grid_position_signal.emit(position)
         self.grid_flash_signal.emit(True)
+
+        # Debug print
+        print(f"DEBUG: Repeat measuring channel {channel} at position {position}")
+        
+        # Emit the correct channel
+        self.visualization_update.emit(position, [channel], True)
 
         retry_msg = (f" (Retry {self.current_retry + 1}/{self.max_retries})"
                     if self.current_retry else "")
@@ -361,7 +376,11 @@ class MeasurementWorker(QThread):
                     delete_measurement_by_uuid(old_uuid)     
             # Turn off flash after success
             self.grid_flash_signal.emit(False)
-            
+            self.visualization_update.emit(
+                self.measurement_state['current_position'], 
+                [], 
+                False
+            )           
             # Mark current pair as completed
             state['pair_completed'] = True
             state['re_idx'] += 1                
@@ -403,7 +422,11 @@ class MeasurementWorker(QThread):
         
         # Turn off flash on failure
         self.grid_flash_signal.emit(False)
-        
+        self.visualization_update.emit(
+            self.measurement_state['current_position'], 
+            [], 
+            False
+        )
         self.status_update.emit(f"Error: {error_msg} for {current_ch}_pos{current_pos}")
         
         if self.current_retry < self.max_retries:
@@ -442,10 +465,17 @@ class MeasurementWorker(QThread):
             if self.check_timer:
                 self.check_timer.stop()
                 self.check_timer = None
-            self.grid_flash_signal.emit(False)   
-            self.finished.emit()                 # GUI hears this
-        self.quit()                              # exit thread loop
-                  
+            self.grid_flash_signal.emit(False)
+            
+            # Clear visualization animations
+            self.visualization_update.emit(
+                self.measurement_state.get('current_position', 0), 
+                [],  # No active speakers
+                False  # No flash
+            )
+            
+            self.finished.emit()
+        self.quit()
 
 class ProcessingWorker(QThread):
     """Worker thread for handling cross correlation and vector averaging with error recovery"""
@@ -796,10 +826,23 @@ class RTAWorker(QThread):
 
     def stop_and_finish(self):
         if self.running:
+            # ----------------------------------------------------------
+            # keep current_position inside 0 … num_positions-1
+            state = self.measurement_state
+            if (not state.get('repeat_mode', False)
+                    and state['current_position'] >= state['num_positions']):
+                state['current_position'] = max(0, state['num_positions'] - 1)
+            # ----------------------------------------------------------
+
             self.running = False
             if self.check_timer:
                 self.check_timer.stop()
                 self.check_timer = None
-            self.grid_flash_signal.emit(False)   
-            self.finished.emit()                 # GUI hears this
-        self.quit()                              # exit thread loop
+
+            # turn off grid flash & clear visuals
+            self.grid_flash_signal.emit(False)
+            self.visualization_update.emit(
+                state.get('current_position', 0), [], False
+            )
+            self.finished.emit()
+        self.quit()

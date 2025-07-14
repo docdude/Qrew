@@ -56,8 +56,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.qsettings = QSettings("Docdude", "Qrew")
         self.setWindowTitle("Qrew")
-        self.resize(580, 860)
-        self.setMinimumSize(580, 860)
+        self.resize(640, 880)
+        self.setMinimumSize(600, 860)
         self.bg_source = QPixmap("banner_500x680.png")   # original file
         self.bg_opacity = 0.35                           # user-chosen α
         self.set_background_image()                                 # first fill
@@ -274,7 +274,7 @@ class MainWindow(QMainWindow):
         checkbox_widget.setMinimumSize(450, 150)
         checkbox_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         main_layout.addWidget(checkbox_widget, alignment=Qt.AlignTop)
-        main_layout.addSpacing(0)
+        main_layout.addSpacing(-25)
 
                 
         # ───────────────── num-positions row ───────────────── #
@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
         pos_container.setStyleSheet("background: transparent;")
         
         pos_layout = QHBoxLayout(pos_container)
-        pos_layout.setContentsMargins(20, 0, 0, 0)
+        pos_layout.setContentsMargins(0, 50, 0, 0)
 
         pos_label = QLabel("Number of Positions:")
         pos_label.setStyleSheet("color: white; font-weight: bold;")
@@ -312,6 +312,35 @@ class MainWindow(QMainWindow):
 
 
         pos_layout.addWidget(self.pos_selector)
+
+        # ───────────────── Metrics Display ───────────────── #
+        metrics_container = QWidget()
+        metrics_container.setStyleSheet("background: transparent;")
+        metrics_layout = QHBoxLayout(metrics_container)
+        metrics_layout.setContentsMargins(50, 100, 50, 0)
+        
+        # Metrics label
+        self.metrics_label = QLabel("")
+        self.metrics_label.setStyleSheet("""
+            QLabel { 
+                background: rgba(0, 0, 0, 0.8); 
+                color: white; 
+                padding: 5px 10px; 
+                border: 1px solid #444;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+        """)
+        self.metrics_label.setTextFormat(Qt.RichText)
+        self.metrics_label.setAlignment(Qt.AlignCenter)
+        self.metrics_label.setMinimumSize(120,30)
+       # self.metrics_label.hide()  # Initially hidden
+        
+        metrics_layout.addWidget(self.metrics_label)
+      #  main_layout.addWidget(metrics_container, alignment=Qt.AlignCenter)
+       # main_layout.addSpacing(5)
+
         mode = qs.get("viz_view",  "Grid View")
         # Grid widget container 
         grid_container = QWidget()
@@ -337,47 +366,40 @@ class MainWindow(QMainWindow):
 
         self.grid_widget.set_horizontal_stretch(1.3)
         grid_container_layout.addWidget(self.grid_widget)
-
-        pos_layout.addWidget(grid_container)
+#############
+      #  pos_layout.addWidget(grid_container)
         # after you add the widgets to pos_layout  (label – combo – grid_container)
-        pos_layout.setStretchFactor(grid_container, 1)     # label column
+       # pos_layout.setStretchFactor(grid_container, 1)     # label column
 
     # pos_layout.addSpacing(0)
+        # ---- positions + metrics (left)  /  grid (right) --------------
+        row_widget   = QWidget()
+        row_layout   = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(10, 0, 0, 0)
+        row_layout.setSpacing(20)
 
-        main_layout.addWidget(pos_container)
-        main_layout.addSpacing(0)
+        # left column  (positions + metrics)
+        left_col     = QWidget()
+        left_layout  = QVBoxLayout(left_col)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+        left_layout.addWidget(pos_container)
+        left_layout.addWidget(metrics_container)
+        left_layout.addStretch()
+
+        row_layout.addWidget(left_col,          0)   # minimal width
+        row_layout.addWidget(grid_container,    1)   # grid takes all spare space
+
+        main_layout.addWidget(row_widget)            # ← replaces previous adds
+
+       # main_layout.addWidget(pos_container)
+        main_layout.addSpacing(-50)
 
         # React to user choice
         self.pos_selector.currentTextChanged.connect(self._rebuild_grid)
         self.switch_visualization_mode(mode)
 
-        # ───────────────── Metrics Display ───────────────── #
-        metrics_container = QWidget()
-        metrics_container.setStyleSheet("background: transparent;")
-        metrics_layout = QHBoxLayout(metrics_container)
-        metrics_layout.setContentsMargins(50, 0, 50, 0)
-        
-        # Metrics label
-        self.metrics_label = QLabel("")
-        self.metrics_label.setStyleSheet("""
-            QLabel { 
-                background: rgba(0, 0, 0, 0.8); 
-                color: white; 
-                padding: 5px 10px; 
-                border: 1px solid #444;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-        """)
-        self.metrics_label.setTextFormat(Qt.RichText)
-        self.metrics_label.setAlignment(Qt.AlignCenter)
-        self.metrics_label.setMinimumSize(120,30)
-       # self.metrics_label.hide()  # Initially hidden
-        
-        metrics_layout.addWidget(self.metrics_label)
-        main_layout.addWidget(metrics_container, alignment=Qt.AlignCenter)
-        main_layout.addSpacing(5)
+
 
         # Command button container
         meas_container = QWidget()

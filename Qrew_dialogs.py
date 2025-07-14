@@ -1028,18 +1028,43 @@ class RepeatMeasurementDialog(QDialog):
             self.selection_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.selection_label.setTextFormat(Qt.RichText)
             self.selection_label.setStyleSheet('color: #fff; padding: 0px;')
+            # Update button text to show channel info
+            channel_names = sorted(set(m['channel'] for m in self.selected_measurements))
+            button_text = f'Remeasure Selected ({", ".join(channel_names)})'
+            self.proceed_button.setText(button_text)
+
             self.proceed_button.setEnabled(True)
         else:
             self.selection_label.setText('<i>No measurements selected</i>')
             self.selection_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.selection_label.setTextFormat(Qt.RichText)
             self.selection_label.setStyleSheet('color: #666; font-style: italic; padding: 2px;')
+            self.proceed_button.setText('Remeasure Selected')
             self.proceed_button.setEnabled(False)
 
     def proceed_with_remeasurement(self):
-       # if self.selected_measurements:
+        """Show info about selected channels and positions, then proceed"""
+        if self.selected_measurements:
+            # Get unique channels and positions that user selected
+            selected_channels = sorted(set(m['channel'] for m in self.selected_measurements))
+            selected_positions = sorted(set(m['position'] for m in self.selected_measurements))
+            
+            channel_list = ', '.join(selected_channels)
+            position_list = ', '.join(str(p) for p in selected_positions)
+            
+            # Show info message about visualization
+            QrewMessageBox.information(
+                self,
+                'Repeat Measurement Selection',
+                f'Theater view will show:\n\n'
+                f'Channels: {channel_list}\n'
+                f'Positions: {position_list}\n\n'
+                f'Other channels and positions will be hidden during this repeat measurement session.'
+            )
+            
         self.result = 'proceed'
         self.accept()
+
 
 class DeleteSelectedMeasurementsDialog(QDialog):
     def __init__(self, selected_measurements, parent=None):
@@ -1126,8 +1151,6 @@ class DeleteSelectedMeasurementsDialog(QDialog):
         self.setLayout(layout)
 
 class SettingsDialog(QDialog):
-   # FILE = "settings.json"
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Application Settings")
@@ -1300,6 +1323,13 @@ class SettingsDialog(QDialog):
         row.addWidget(ok_btn)
         form.addLayout(row)
 
+        self.viz_mode_combo.currentTextChanged.connect(self.preview_visualization_mode)
+
+    def preview_visualization_mode(self, mode):
+        """Preview visualization mode change in real-time"""
+        if self.parent():  # parent is MainWindow
+            self.parent().switch_visualization_mode(mode)
+
     def preview_preset(self, name):
         presets = SPEAKER_CONFIGS
         if name in presets and self.parent():          # parent is MainWindow
@@ -1432,12 +1462,18 @@ class MicPositionVisualizationDialog(QDialog):
             "/Users/juanloya/Documents/qrew/qrew/hometheater_base_persp.png", 
             "/Users/juanloya/Documents/qrew/qrew/room_layout_persp.json"
         )
-        
+        # Set to not show speaker icons for full view
+       # self.mic_widget.set_show_speaker_icons(False)
+         
         # Layout
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.mic_widget)
-        
+        centre = QWidget()
+        h = QHBoxLayout(centre)
+        h.addStretch()
+        h.addWidget(self.mic_widget)
+        h.addStretch()
+        layout.addWidget(centre)        
         # Control buttons
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(10, 5, 10, 10)
@@ -1448,7 +1484,7 @@ class MicPositionVisualizationDialog(QDialog):
         
         self.close_button = Button("Close")
         self.close_button.clicked.connect(self.hide)  # Hide instead of close
-        self.close_button.setMaximumWidth(100)
+     #   self.close_button.setMaximumWidth(100)
         
         button_layout.addWidget(self.stay_on_top_check)
         button_layout.addStretch()
@@ -1467,10 +1503,15 @@ class MicPositionVisualizationDialog(QDialog):
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
         self.show()  # Need to show again after changing window flags
         
-    def update_visualization(self, active_mic=None, active_speakers=None):
+    def update_visualization(self, active_mic=None, active_speakers=None, selected_channels=None, flash=False):
         """Update the visualization with current state"""
         if active_mic is not None:
             self.mic_widget.set_active_mic(active_mic)
         
         if active_speakers is not None:
             self.mic_widget.set_active_speakers(active_speakers)
+            
+        if selected_channels is not None:
+            self.mic_widget.set_selected_channels(selected_channels)
+            
+        self.mic_widget.set_flash_state(flash)
