@@ -1,7 +1,8 @@
 # Qrew_styles.py
 """Centralized style definitions for the application"""
 
-from PyQt5 import QtCore, QtGui
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap, QPainter, QPalette, QBrush, QColor
 
 # HTML Icons for UI
 HTML_ICONS = {
@@ -26,21 +27,51 @@ HTML_ICONS = {
     'raised_hand': '&#9995;'
 }
 
-def tint(pix: QtGui.QPixmap, color: QtGui.QColor) -> QtGui.QPixmap:
+def tint(pix: QPixmap, color: QColor) -> QPixmap:
     """Return a color-tinted copy of *pix* (preserves alpha)."""
-    tinted = QtGui.QPixmap(pix.size())
+    tinted = QPixmap(pix.size())
     #tinted = QtGui.QPixmap(pix.size())       # physical size
     tinted.setDevicePixelRatio(pix.devicePixelRatio())  # preserve DPR
 
-    tinted.fill(QtCore.Qt.transparent)
+    tinted.fill(Qt.transparent)
 
-    p = QtGui.QPainter(tinted)
-    p.setCompositionMode(QtGui.QPainter.CompositionMode_Source)
+    p = QPainter(tinted)
+    p.setCompositionMode(QPainter.CompositionMode_Source)
     p.drawPixmap(0, 0, pix)                    # alpha mask
-    p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+    p.setCompositionMode(QPainter.CompositionMode_SourceIn)
     p.fillRect(tinted.rect(), color)           # tint
     p.end()
     return tinted
+
+
+
+# qrew_styles.py  (already in your project)
+def set_background_image(widget):
+    if getattr(widget, "bg_source", None) is None:
+        return
+
+    if widget.bg_source.isNull():
+        return                                            # missing file
+
+    # --- scale -----------------------------------------
+    scaled = widget.bg_source.scaled(
+        widget.size(),
+        Qt.KeepAspectRatioByExpanding,
+        Qt.SmoothTransformation,
+    )
+
+    canvas = QPixmap(scaled.size())
+    canvas.fill(Qt.transparent)
+
+    p = QPainter(canvas)
+    p.setOpacity(getattr(widget, "bg_opacity", 0.35))
+    p.drawPixmap(0, 0, scaled)
+    p.end()
+
+    pal = widget.palette()
+    pal.setBrush(QPalette.Window, QBrush(canvas))
+    widget.setPalette(pal)
+    widget.setAutoFillBackground(True)
 
 
 BUTTON_STYLES = {

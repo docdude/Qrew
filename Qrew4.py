@@ -28,7 +28,7 @@ from Qrew_measurement_metrics import evaluate_measurement
 from Qrew_message_handlers import rta_coordinator
 
 from Qrew_workers import MeasurementWorker, ProcessingWorker
-from Qrew_styles import tint, HTML_ICONS
+from Qrew_styles import tint, HTML_ICONS, set_background_image
 from Qrew_button import Button
 from Qrew_gridwidget import GridWidget
 from Qrew_messagebox import QrewMessageBox, QrewFileDialog
@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(600, 860)
         self.bg_source = QPixmap("banner_500x680.png")   # original file
         self.bg_opacity = 0.35                           # user-chosen α
-        self.set_background_image()                                 # first fill
+        set_background_image(self)                                 # first fill
         #self.app_settings = qs._load()
         print(f"DEBUG: Loaded settings: {qs._load()}")
         print(f"DEBUG: Settings file exists: {os.path.exists('settings.json')}")
@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         self.selected_channels_for_viz = set()  # Track selected channels for visualization
 
         # Track the last valid position count
-        self.last_valid_positions = 9  # Default
+        self.last_valid_positions = 12  # Default
         self.measurement_qualities = {}  # {(channel, position): {'rating': 'PASS/CAUTION/RETAKE', 'score': float, 'uuid': str}}
 
         # Central widget
@@ -188,6 +188,8 @@ class MainWindow(QMainWindow):
                 checkbox.setStyleSheet("""
                     QCheckBox {
                     padding: 3px; 
+                    color: "#00A2FF";
+                    font-size: 14px;
                     }
                     QCheckBox::indicator {
                         width: 15px;
@@ -249,6 +251,8 @@ class MainWindow(QMainWindow):
                     checkbox.setStyleSheet("""
                         QCheckBox {
                         padding: 3px; 
+                        color: "#00A2FF";
+                        font-size: 14px;
                         }
                         QCheckBox::indicator {
                             width: 15px;
@@ -729,10 +733,10 @@ class MainWindow(QMainWindow):
             n = int(text)
         except ValueError:
             return
-        was_flashing = self.flash_timer.isActive()
+      #  was_flashing = self.flash_timer.isActive()
         self.sofa_widget.set_visible_positions(n)
-        if was_flashing:
-            self.sofa_widget.set_flash(True)
+        if self._flash_state:
+            self.sofa_widget.set_flash(self._flash_state)
 
 
     def update_metrics_display(self, metrics: dict):
@@ -866,33 +870,6 @@ class MainWindow(QMainWindow):
         self.current_warnings.clear()
         self.current_errors.clear()  
         self.update_error_display()
-
-    def set_background_image(self):
-        if self.bg_source.isNull():
-            return                                      # file missing?
-
-        # -- scale to the *current* window size --------
-        scaled = self.bg_source.scaled(
-            self.size(),                       # full client area
-            Qt.KeepAspectRatioByExpanding,
-            Qt.SmoothTransformation
-        )
-
-        # -- stamp the scaled image onto a transparent canvas
-        canvas = QPixmap(scaled.size())
-        canvas.fill(Qt.transparent)
-
-        p = QPainter(canvas)
-        p.setOpacity(self.bg_opacity)         # 0.0 … 1.0
-        p.drawPixmap(0, 0, scaled)
-        p.end()
-
-        # -- install the brush --------------------------
-        pal = self.palette()
-        pal.setBrush(QPalette.Window, QBrush(canvas))
-        self.setPalette(pal)
-        self.setAutoFillBackground(True)       # important
-
 
     def set_background_image_opaque(self, image_path, opacity=0.35):
         """
@@ -1053,8 +1030,8 @@ class MainWindow(QMainWindow):
             self.measurement_state['running'] = False
             self.start_button.setEnabled(True)
             # Stop flash
-            if self.flash_timer:
-                self.flash_timer.stop()
+          #  if self.flash_timer:
+           #     self.flash_timer.stop()
             self.sofa_widget.set_flash(False)
             # Stop worker if running
             if self.measurement_worker and self.measurement_worker.isRunning():
@@ -1114,8 +1091,8 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Measurement process completed.")
             self.show_save_measurements_dialog()
 
-        if self.flash_timer:
-            self.flash_timer.stop()
+     #   if self.flash_timer:
+      #      self.flash_timer.stop()
         self.sofa_widget.set_flash(False)
 
         if hasattr(self, 'sofa_widget') and self.sofa_widget:
@@ -1312,8 +1289,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Handle window close event"""
-        if self.flash_timer:
-            self.flash_timer.stop()
+       # if self.flash_timer:
+        #    self.flash_timer.stop()
         if self.measurement_worker and self.measurement_worker.isRunning():
             self.measurement_worker.stop()
         if hasattr(self, 'processing_worker') and self.processing_worker and self.processing_worker.isRunning():
@@ -1763,7 +1740,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """Handle window resize to scale compact view and maintain proper widget visibility"""
         super().resizeEvent(event)
-        self.set_background_image()
+        set_background_image(self)
         QTimer.singleShot(0, self._scale_current_grid_container_widget)
         current_mode = self.get_current_viz_mode()
         if (current_mode == "Compact Theater View"

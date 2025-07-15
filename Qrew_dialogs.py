@@ -8,9 +8,9 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QCheckBox, QGridLayout,
 
 
 from PyQt5.QtCore import Qt, QSize, QRect, QPoint
-
+from PyQt5.QtGui import QPixmap
 from Qrew_button import Button
-from Qrew_styles import HTML_ICONS
+from Qrew_styles import HTML_ICONS, set_background_image
 from Qrew_common import SPEAKER_LABELS, SPEAKER_CONFIGS
 from Qrew_messagebox import QrewMessageBox, QrewFileDialog
 import Qrew_settings as qs
@@ -1496,6 +1496,8 @@ class MicPositionVisualizationDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
 
         place_dialog_beside_parent(self, parent, side="right")
+        self.bg_source = QPixmap("banner_500x680.png")
+        self.bg_opacity = 0.10
         # Create the visualization widget
         self.mic_widget = MicPositionWidget(
             "/Users/juanloya/Documents/qrew/qrew/hometheater_base_persp.png", 
@@ -1505,14 +1507,19 @@ class MicPositionVisualizationDialog(QDialog):
        # self.mic_widget.set_show_speaker_icons(False)
          
         # Layout
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
+       # layout = QVBoxLayout()
+        #layout.setContentsMargins(0, 0, 0, 0)
         centre = QWidget()
+        centre.setStyleSheet("background:  transparent")
+
         h = QHBoxLayout(centre)
         h.addStretch()
         h.addWidget(self.mic_widget)
         h.addStretch()
-        layout.addWidget(centre)        
+        #layout.addWidget(centre)        
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(centre)
         # Control buttons
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(10, 5, 10, 10)
@@ -1529,9 +1536,9 @@ class MicPositionVisualizationDialog(QDialog):
         button_layout.addStretch()
         button_layout.addWidget(self.close_button)
         
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-        
+        main.addLayout(button_layout)
+        #self.setLayout(layout)
+        set_background_image(self)
         # Set size based on background image
         self.resize(self.mic_widget.background.size() + QSize(0, 50))
         
@@ -1554,3 +1561,7 @@ class MicPositionVisualizationDialog(QDialog):
             self.mic_widget.set_selected_channels(selected_channels)
             
         self.mic_widget.set_flash_state(flash)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        set_background_image(self)
