@@ -135,12 +135,12 @@ class CoordinatePicker(QWidget):
 
     def save_to_json(self):
         layout = {"speakers": self.speakers, "mics": self.mics}
-        with open("room_layout_persp.json", "w") as f:
+        with open("sofa_coordinates.json", "w") as f:
             json.dump(layout, f, indent=2)
         print("✅ Saved to room_layout.json")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    picker = CoordinatePicker("hometheater_all_speakers_persp.png")  # Replace with your PNG
+    picker = CoordinatePicker("sofa.png")  # Replace with your PNG
     picker.show()
     sys.exit(app.exec_())

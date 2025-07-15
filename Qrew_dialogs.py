@@ -3,11 +3,11 @@
 import os
 import datetime
 from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QCheckBox, QGridLayout,
-                            QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog,
+                            QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog, QApplication,
                             QDialog, QSizePolicy, QScrollArea, QGroupBox, QFrame, QComboBox)
 
 
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QRect, QPoint
 
 from Qrew_button import Button
 from Qrew_styles import HTML_ICONS
@@ -35,7 +35,6 @@ def center_dialog_on_parent(dialog, parent):
     y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
     
     # Ensure dialog stays on screen
-    from PyQt5.QtWidgets import QApplication
     screen = QApplication.primaryScreen().geometry()
     
     # Clamp to screen bounds
@@ -43,6 +42,45 @@ def center_dialog_on_parent(dialog, parent):
     y = max(0, min(y, screen.height() - dialog_rect.height()))
     
     dialog.move(x, y)
+
+
+def place_dialog_beside_parent(dialog, parent, side="right", gap=20):
+    """
+    Position *dialog* beside *parent*.
+    
+    side = "right" | "left"
+    gap  = pixels between the two windows
+    """
+    if parent is None:
+        return  # nothing to anchor to
+    
+    # 1) parent’s geometry on screen (incl. window frame)
+    p_geo: QRect = parent.frameGeometry()
+
+    # 2) choose target point
+    if side == "right":
+        x = p_geo.right() + gap
+    else:                                     # "left"
+        x = p_geo.left() - gap - dialog.width()
+    y = p_geo.top()                           # align top edges
+
+    # 3) keep inside the same screen’s available area
+    screen_number = QApplication.desktop().screenNumber(parent)
+    screen_geo    = QApplication.desktop().screenGeometry(screen_number)
+
+    # right edge overflow ?
+    if x + dialog.width() > screen_geo.right():
+        x = screen_geo.right() - dialog.width() - 1
+    # left edge overflow ?
+    if x < screen_geo.left():
+        x = screen_geo.left()
+
+    # optional: keep title-bar visible
+    if y + 30 > screen_geo.bottom():
+        y = screen_geo.bottom() - 30
+
+    # 4) move + (optionally) raise
+    dialog.move(QPoint(x, y))
 
 class PositionDialog(QDialog):
     def __init__(self, position, parent=None):
@@ -1261,8 +1299,8 @@ class SettingsDialog(QDialog):
        
         # Compact/Dialog toggle
         self.viz_mode_combo = QComboBox()
-        self.viz_mode_combo.addItems(["Grid View", "Compact Theater View", "Full Theater View"])
-        self.viz_mode_combo.setCurrentText(current_values.get("viz_view", "Grid View"))
+        self.viz_mode_combo.addItems(["Sofa View", "Compact Theater View", "Full Theater View"])
+        self.viz_mode_combo.setCurrentText(current_values.get("viz_view", "Sofa View"))
         self.viz_mode_combo.setMaximumWidth(150)
         self.viz_mode_combo.setStyleSheet("""
             QComboBox {
@@ -1456,7 +1494,8 @@ class MicPositionVisualizationDialog(QDialog):
 
         self.setModal(False)  # Non-modal so it can stay open during measurements
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
-        
+
+        place_dialog_beside_parent(self, parent, side="right")
         # Create the visualization widget
         self.mic_widget = MicPositionWidget(
             "/Users/juanloya/Documents/qrew/qrew/hometheater_base_persp.png", 

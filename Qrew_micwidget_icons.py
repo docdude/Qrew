@@ -25,7 +25,7 @@ class MicPositionWidget(QWidget):
         self.speaker_pixmaps = {}
         self.active_mic = None
         self.active_speakers = set()
-        self.visible_positions = 9  # Default to show all positions
+        self.visible_positions = 12  # Default to show all positions
         self.selected_channels = set()  # Track selected channels
         self.flash_state = False  # Track flash state
         self.show_speaker_icons = True  # Control speaker icon visibility
@@ -159,6 +159,7 @@ class MicPositionWidget(QWidget):
         
     def init_labels(self):
         # Speaker labels
+        
         for key, data in self.speakers.items():
             x, y = data["x"], data["y"]
             # Scale coordinates
@@ -198,9 +199,18 @@ class MicPositionWidget(QWidget):
             lbl = QLabel(str(mic_id), self)
             lbl.setGeometry(x - dot_size//2, y - dot_size//2, dot_size, dot_size)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setFont(QFont("Monaco", font_size, QFont.Bold))
-            lbl.setStyleSheet("background-color: red; color: white; border-radius: 10px;")
-            
+            lbl.setFont(QFont("Arial", font_size, QFont.Bold))
+            lbl.setStyleSheet(
+                f"""
+                background-color: red;
+                color: white;
+                border-radius: {dot_size // 2}px;
+                font-family: Arial;
+                font-size: {font_size}px;
+                font-weight: 600;
+                """
+            )
+          
             # Set initial visibility based on visible_positions
             try:
                 mic_num = int(str(mic_id))
@@ -243,7 +253,7 @@ class MicPositionWidget(QWidget):
         wave_max = int(60 * self.current_scale)
 
         # Mic animation
-        if self.active_mic:
+        if self.flash_state and self.active_mic:
             data = self.mics.get(self.active_mic)
             if data:
                 x = int(data["x"] * self.current_scale)
@@ -256,7 +266,7 @@ class MicPositionWidget(QWidget):
                 painter.drawEllipse(QPoint(x, y), radius, radius)
 
         # Speaker animations  
-        if self.flash_state:
+        if self.flash_state and self.active_speakers:
             for key in self.active_speakers:
                 if key in self.speakers:
                     x = int(self.speakers[key]["x"] * self.current_scale)
@@ -283,14 +293,103 @@ class MicPositionWidget(QWidget):
                         painter.setBrush(Qt.NoBrush)
                         painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
 
+
+class SofaWidget(MicPositionWidget):
+    """
+    A MicPositionWidget pre-loaded with sofa.png + sofa_coordinates.json
+    and exposing the same two methods (set_flash / set_current_pos)
+    that the old GridWidget offered, so the rest of the program does
+    not have to change.
+    """
+    DOT_BASE = 40                          
+
+    def __init__(self, png='/Users/juanloya/Documents/qrew/qrew/sofa.png', json_file='/Users/juanloya/Documents/qrew/qrew/sofa_coordinates.json'):
+        super().__init__(png, json_file)
+        self._flash = False
+
+    # --- API expected by MainWindow -------------------------------
+    def set_flash(self, on: bool):
+        self._flash = on
+        self.set_flash_state(on)
+
+    def set_current_pos(self, pos: int):
+        self.set_active_mic(pos)
+        self.update()                        
+
+    @property
+    def flash_on(self):
+        return self._flash
+
+  #  def set_current_pos(self, pos: int):
+   #     self.set_active_mic(pos)
+
+    # -------- override the mic-label creation so the dots start larger
+    def init_labels(self):
+        super().init_labels()
+        for lbl in self.mic_labels.values():
+            old_w = lbl.width()                      # ← size that super() gave us
+            new_w = max(int(self.DOT_BASE * self.current_scale), 14)
+            font_size = max(8, int(32 * self.current_scale))
+
+            lbl.setFixedSize(new_w, new_w)
+            lbl.setFont(QFont("Arial", font_size, QFont.Bold))
+
+            lbl.setStyleSheet(
+                f"""
+                background-color: red;
+                color: white;
+                border-radius: {new_w // 2}px;
+                font-family: Arial;
+                font-size: {font_size}px;
+                font-weight: 600;
+                """
+            )
+
+            # shift back so the centre stays at the same (x, y)
+            dx = (new_w - old_w) // 2
+            lbl.move(lbl.x() - dx, lbl.y() - dx)     # same delta for x and y
+    # ──────────────────────────────────────────────────────
+    #  make the active-mic ring sit *outside* the dot
+    # ──────────────────────────────────────────────────────
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.flash_state or self.active_mic is None:
+            return
+        if str(self.active_mic) not in self.mics:
+            return
+        
+        # Use original coordinates, not label geometry
+        coords = self.mics[str(self.active_mic)]
+        center_x = int(coords['x'] * self.current_scale)
+        center_y = int(coords['y'] * self.current_scale)
+        
+        dot_label = self.mic_labels[str(self.active_mic)]
+        dot_radius = dot_label.width() // 2
+        pulse_offset = abs(self.ripple_phase % 30 - 15) / 15
+        ring_radius = dot_radius + int(8 * pulse_offset * self.current_scale) + max(int(6 * self.current_scale), 3)
+        
+        painter = QPainter(self)
+        pen = QPen(QColor(255, 0, 0, 180))
+        pen.setWidth(max(2, int(3 * self.current_scale)))
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(QPoint(center_x, center_y), ring_radius, ring_radius)
+        painter.end()
+
+
+ #   def set_flash(self, on: bool):
+  #      self._flash = on
+   #     self.set_flash_state(on)
+    #    self.update()                 
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     widget = MicPositionWidget("hometheater_base_persp.png", "room_layout_persp.json")
     widget.set_active_mic(0)
 
     # Test: Cycle mic + animate 2 speakers
-   # test_speakers = ["TML", "FR"]
-    test_speakers = []
+    test_speakers = ["TML", "FR"]
+  #  test_speakers = []
     mic_keys = list(widget.mic_labels.keys())
     mic_index = [0]
 
