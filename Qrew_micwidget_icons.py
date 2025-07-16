@@ -240,6 +240,7 @@ class MicPositionWidget(QWidget):
             p.end()
             self._painting = False
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
         painter.drawPixmap(0, 0, self.background)
         # Only animate ripple if flash state is true
         if self.flash_state and (self.active_mic is not None or self.active_speakers):
@@ -247,7 +248,9 @@ class MicPositionWidget(QWidget):
         else:
             self.ripple_phase = 0  # Reset phase when not flashing
         # Scale animation elements
-        base_radius = int(12 * self.current_scale)
+        dot_wave_base = int(12 * self.current_scale)
+        dot_wave_max = int(20 * self.current_scale)
+        dot_glow_radius = int(20 * self.current_scale)
         glow_radius = int(30 * self.current_scale)
         wave_base = int(20 * self.current_scale)
         wave_max = int(60 * self.current_scale)
@@ -258,41 +261,56 @@ class MicPositionWidget(QWidget):
             if data:
                 x = int(data["x"] * self.current_scale)
                 y = int(data["y"] * self.current_scale)
-                radius = base_radius + int(4 * abs((self.ripple_phase % 30) - 15) / 15 * self.current_scale)
-                pen = QPen(QColor(255, 0, 0, 180))
-                pen.setWidth(max(1, int(2 * self.current_scale)))
-                painter.setPen(pen)
-                painter.setBrush(Qt.NoBrush)
-                painter.drawEllipse(QPoint(x, y), radius, radius)
+                # Glow Effect
+                glow_color = QColor(255, 0, 0, 80)
+                painter.setBrush(glow_color)
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(QPoint(x, y), dot_glow_radius, dot_glow_radius)
+                for i in range(3):
+                    phase = (self.ripple_phase + i * 20) % 60
+                    opacity = int(250 * (1 - phase / 60))
+                    radius = dot_wave_base + int((phase / 60) * dot_wave_max)
+                    pen = QPen(QColor(255, 0, 0, opacity))
+                    pen.setWidth(max(1, int(2 * self.current_scale)))
+                    painter.setPen(pen)
+                    painter.setBrush(Qt.NoBrush)
+                    #painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
+                    painter.drawEllipse(QPoint(x, y), radius, radius)
 
         # Speaker animations  
         if self.flash_state and self.active_speakers:
+            steps = 4
             for key in self.active_speakers:
-                if key in self.speakers:
-                    x = int(self.speakers[key]["x"] * self.current_scale)
-                    y = int(self.speakers[key]["y"] * self.current_scale)
+                lbl = self.labels.get(key)
+                if not lbl or not lbl.isVisible():      # << guard: skip if no label
+                    continue
+               # if key in self.speakers:
+                  #  x = int(self.speakers[key]["x"] * self.current_scale)
+                   # y = int(self.speakers[key]["y"] * self.current_scale)
+                cx = lbl.x() + lbl.width()  // 2   # label centre in *widget* coords
+                cy = lbl.y() + lbl.height() // 2
+                # Glow Effect
+                glow_color = QColor(0, 255, 0, 80)
+                painter.setBrush(glow_color)
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(QPoint(cx, cy), glow_radius, glow_radius)
 
-                    # Glow Effect
-                    glow_color = QColor(0, 255, 0, 80)
-                    painter.setBrush(glow_color)
-                    painter.setPen(Qt.NoPen)
-                    painter.drawEllipse(QPoint(x, y), glow_radius, glow_radius)
+                # Pulse Ring Wave
+               # steps = 4
+             #   offset_x = int(2 * self.current_scale)
+              #  offset_y = int(-1 * self.current_scale)
 
-                    # Pulse Ring Wave
-                    steps = 4
-                    offset_x = int(2 * self.current_scale)
-                    offset_y = int(-1 * self.current_scale)
-
-                    for i in range(steps):
-                        phase = (self.ripple_phase + i * 20) % 60
-                        opacity = int(250 * (1 - phase / 60))
-                        radius = wave_base + int((phase / 60) * wave_max)
-                        pen = QPen(QColor(0, 255, 0, opacity))
-                        pen.setWidth(max(1, int(2 * self.current_scale)))
-                        painter.setPen(pen)
-                        painter.setBrush(Qt.NoBrush)
-                        painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
-
+                for i in range(steps):
+                    phase = (self.ripple_phase + i * 20) % 60
+                    opacity = int(250 * (1 - phase / 60))
+                    radius = wave_base + int((phase / 60) * wave_max)
+                    pen = QPen(QColor(0, 255, 0, opacity))
+                    pen.setWidth(max(1, int(2 * self.current_scale)))
+                    painter.setPen(pen)
+                    painter.setBrush(Qt.NoBrush)
+                    #painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
+                    painter.drawEllipse(QPoint(cx, cy), radius, radius)
+        painter.end()
 
 class SofaWidget(MicPositionWidget):
     """
@@ -301,7 +319,7 @@ class SofaWidget(MicPositionWidget):
     that the old GridWidget offered, so the rest of the program does
     not have to change.
     """
-    DOT_BASE = 40                          
+    DOT_BASE = 56                          
 
     def __init__(self, png='/Users/juanloya/Documents/qrew/qrew/sofa.png', json_file='/Users/juanloya/Documents/qrew/qrew/sofa_coordinates.json'):
         super().__init__(png, json_file)
@@ -359,24 +377,48 @@ class SofaWidget(MicPositionWidget):
             return
         
         # Use original coordinates, not label geometry
-        coords = self.mics[str(self.active_mic)]
-        center_x = int(coords['x'] * self.current_scale)
-        center_y = int(coords['y'] * self.current_scale)
-        
+        # --- OLD -------------------------------------------------
+        # coords  = self.mics[str(self.active_mic)]
+        # center_x = int(coords['x'] * self.current_scale)
+        # center_y = int(coords['y'] * self.current_scale)
+
+        # --- NEW -------------------------------------------------
         dot_label = self.mic_labels[str(self.active_mic)]
+        center_x  = dot_label.x() + dot_label.width()  // 2
+        center_y  = dot_label.y() + dot_label.height() // 2
+
+        
+      #  dot_label = self.mic_labels[str(self.active_mic)]
         dot_radius = dot_label.width() // 2
-        pulse_offset = abs(self.ripple_phase % 30 - 15) / 15
-        ring_radius = dot_radius + int(8 * pulse_offset * self.current_scale) + max(int(6 * self.current_scale), 3)
+       # pulse_offset = abs(self.ripple_phase % 30 - 15) / 15
+        #ring_radius = dot_radius + int(8 * pulse_offset * self.current_scale) + max(int(14 * self.current_scale), 3)
         
         painter = QPainter(self)
-        pen = QPen(QColor(255, 0, 0, 180))
-        pen.setWidth(max(2, int(3 * self.current_scale)))
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawEllipse(QPoint(center_x, center_y), ring_radius, ring_radius)
-        painter.end()
-
-
+       # pen = QPen(QColor(255, 0, 0, 180))
+      #  pen.setWidth(max(2, int(3 * self.current_scale)))
+       # painter.setPen(pen)
+      #  painter.setBrush(Qt.NoBrush)
+     #   painter.drawEllipse(QPoint(center_x, center_y), ring_radius, ring_radius)
+       # painter.end()
+        
+        # Glow Effect
+        glow_radius = dot_radius + int(30 * self.current_scale)
+        glow_color = QColor(255, 0, 0, 80)
+        painter.setBrush(glow_color)
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(QPoint(center_x, center_y), glow_radius, glow_radius)
+        dot_wave_base   = int(30 * self.current_scale)
+        dot_wave_max   = int(80 * self.current_scale)
+        for i in range(3):
+            phase = (self.ripple_phase + i * 20) % 60
+            opacity = int(250 * (1 - phase / 60))
+            radius = dot_wave_base + int((phase / 60) * dot_wave_max)
+            pen = QPen(QColor(255, 0, 0, opacity))
+            pen.setWidth(max(1, int(2 * self.current_scale)))
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            #painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
+            painter.drawEllipse(QPoint(center_x, center_y), radius, radius)
  #   def set_flash(self, on: bool):
   #      self._flash = on
    #     self.set_flash_state(on)

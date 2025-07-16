@@ -6,6 +6,8 @@ import Qrew_common
 import Qrew_settings as qs
 
 try:
+  #if platform.system() == "Windows":
+        #os.add_dll_directory(r'C:\Users\centralmd\Downloads\vlc-3.0.21-win64\vlc-3.0.21')
     import vlc          # python-vlc
 except ImportError:
     vlc = None          # optional
@@ -136,7 +138,8 @@ def find_sweep_file(channel):
     """
     if not Qrew_common.stimulus_dir or not os.path.isdir(Qrew_common.stimulus_dir):
         return None
-
+    if 'SW' in channel:
+        channel = 'LE'
     # Custom pattern that treats common separators as boundaries
     # (?:^|[^A-Za-z0-9]) = start of string OR non-alphanumeric character
     # (?:[^A-Za-z0-9]|$) = non-alphanumeric character OR end of string

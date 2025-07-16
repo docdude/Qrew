@@ -92,7 +92,6 @@ class MeasurementWorker(QThread):
         #self.grid_flash_signal.emit(True)
         print(f"DEBUG: Measuring channel {ch} at position {pos}")
 
-        self.visualization_update.emit(pos, [ch], True)
 
         retry_msg = f" (Retry {self.current_retry + 1}/{self.max_retries})" if self.current_retry > 0 else ""
         self.status_update.emit(f"Starting measurement for {sample_name}{retry_msg}...")
@@ -110,6 +109,8 @@ class MeasurementWorker(QThread):
             self.status_update.emit(f"Failed to start capture for {sample_name}")
             self.handle_measurement_failure("Failed to start capture")
             return
+        
+        self.visualization_update.emit(pos, [ch], True)
 
         # Start checking for completion with improved timing
         self.start_completion_check()
@@ -168,7 +169,6 @@ class MeasurementWorker(QThread):
 
         #self.grid_position_signal.emit(position)
         #self.grid_flash_signal.emit(True)
-        self.visualization_update.emit(position, [channel], True)
 
         # Debug print
         print(f"DEBUG: Repeat measuring channel {channel} at position {position}")
@@ -192,6 +192,8 @@ class MeasurementWorker(QThread):
             self.status_update.emit(f"Failed to start capture for {sample_name}")
             self.handle_measurement_failure("Failed to start capture")
             return
+        
+        self.visualization_update.emit(position, [channel], True)
 
         self.start_completion_check()   # poll coordinator
 
@@ -449,17 +451,7 @@ class MeasurementWorker(QThread):
             self.current_retry = 0
             self.measurement_state['channel_index'] += 1
             QTimer.singleShot(1000, self.continue_measurement)
-    """   
-    def resume_after_position_dialog(self):
-        state = self.measurement_state
-        
-        if state.get('repeat_mode', False):
-            # In repeat mode, we can continue immediately with the current pair
-            QTimer.singleShot(100, self.continue_measurement)
-        else:
-            # Original logic
-            QTimer.singleShot(100, self.continue_measurement)
-    """
+
 
     def stop(self):
         """External hard-stop (e.g. MainWindow.closeEvent)"""

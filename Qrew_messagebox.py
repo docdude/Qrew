@@ -46,7 +46,7 @@ class QrewMessageBox(QDialog):
         
         layout = QVBoxLayout()
         layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(10, 20, 20, 10)
         
         # Icon and title layout
         self.title_layout = QHBoxLayout()

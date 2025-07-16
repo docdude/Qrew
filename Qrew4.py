@@ -310,6 +310,9 @@ class MainWindow(QMainWindow):
             font-size: 14px;
             font: 'arial'; /* font family       */
         }
+        QComboBox QAbstractItemView {
+            color: white; /* Color of the dropdown list items' text */
+        }
 
 
         """)
@@ -397,7 +400,7 @@ class MainWindow(QMainWindow):
 
         # React to user choice
         self.pos_selector.currentTextChanged.connect(self._rebuild_grid)
-        self.switch_visualization_mode(mode)
+       # self.switch_visualization_mode(mode)
 
 
 
@@ -664,7 +667,7 @@ class MainWindow(QMainWindow):
 
         # load persisted settings and apply once
        # self.app_settings = SettingsDialog.load()
-        #self.apply_settings()
+        self.apply_settings()
 
 
         self.connect_visualization_signals()

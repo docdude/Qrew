@@ -1401,7 +1401,7 @@ class REWConnectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("REW Connection Required")
-        self.setFixedSize(450, 235)
+        self.setFixedSize(450, 270)
         self.setModal(True)
         
         layout = QVBoxLayout()
@@ -1488,6 +1488,7 @@ class REWConnectionDialog(QDialog):
 
 
 class MicPositionVisualizationDialog(QDialog):
+    MIN_W, MIN_H = 400, 350          # feel free to adjust
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Measurement Position Visualization")
@@ -1495,14 +1496,17 @@ class MicPositionVisualizationDialog(QDialog):
         self.setModal(False)  # Non-modal so it can stay open during measurements
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
 
-        place_dialog_beside_parent(self, parent, side="right")
+       
+       # place_dialog_beside_parent(self, parent, side="right")
         self.bg_source = QPixmap("banner_500x680.png")
         self.bg_opacity = 0.10
+        set_background_image(self)
         # Create the visualization widget
         self.mic_widget = MicPositionWidget(
             "/Users/juanloya/Documents/qrew/qrew/hometheater_base_persp.png", 
             "/Users/juanloya/Documents/qrew/qrew/room_layout_persp.json"
         )
+        self.mic_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         # Set to not show speaker icons for full view
        # self.mic_widget.set_show_speaker_icons(False)
          
@@ -1513,18 +1517,20 @@ class MicPositionVisualizationDialog(QDialog):
         centre.setStyleSheet("background:  transparent")
 
         h = QHBoxLayout(centre)
-        h.addStretch()
-        h.addWidget(self.mic_widget)
-        h.addStretch()
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addStretch(1)
+        h.addWidget(self.mic_widget, 0, Qt.AlignCenter)
+        h.addStretch(1)
         #layout.addWidget(centre)        
-        main = QVBoxLayout(self)
-        main.setContentsMargins(0, 0, 0, 0)
-        main.addWidget(centre)
+      #  main = QVBoxLayout(self)
+
+       # main.addWidget(centre)
         # Control buttons
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(10, 5, 10, 10)
         
         self.stay_on_top_check = QCheckBox("Stay on Top")
+        self.stay_on_top_check.setStyleSheet("color: white;")
         self.stay_on_top_check.setChecked(True)
         self.stay_on_top_check.stateChanged.connect(self.toggle_stay_on_top)
         
@@ -1536,12 +1542,16 @@ class MicPositionVisualizationDialog(QDialog):
         button_layout.addStretch()
         button_layout.addWidget(self.close_button)
         
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(centre, 1)
         main.addLayout(button_layout)
-        #self.setLayout(layout)
-        set_background_image(self)
-        # Set size based on background image
-        self.resize(self.mic_widget.background.size() + QSize(0, 50))
-        
+        # ── FINALISE GEOMETRY ──────────────────────────
+        self.layout().activate()      # ensure stretches/spacers are honoured
+        self.adjustSize()             # dialog now hugs the contents
+        self.setMinimumSize(self.MIN_W, self.MIN_H)
+        place_dialog_beside_parent(self, parent, side="right")
+
     def toggle_stay_on_top(self, checked):
         if checked:
             self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -1565,3 +1575,10 @@ class MicPositionVisualizationDialog(QDialog):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         set_background_image(self)
+        w   = self.width()  - 40            # a bit of margin for the frame
+        h   = self.height() - 120           # header + footer
+        bgw = self.mic_widget.original_size.width()
+        bgh = self.mic_widget.original_size.height()
+        if bgw and bgh:
+            scale = min(w / bgw, h / bgh)
+            self.mic_widget.set_scale(scale)

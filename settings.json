@@ -5,5 +5,5 @@
   "vlc_backend": "auto",
   "speaker_config": "Manual Select",
   "save_after_repeat": true,
-  "viz_view": "Sofa View"
+  "viz_view": "Full Theater View"
 }

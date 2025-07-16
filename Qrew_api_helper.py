@@ -10,7 +10,7 @@ from Qrew_common import REW_API_BASE_URL
 import Qrew_common
 import os
 import re
-from Qrew_vlc_helper import find_sweep_file
+from Qrew_vlc_helper_v2 import find_sweep_file
 
 
 # Helper functions 
