@@ -520,8 +520,17 @@ class ProcessingWorker(QThread):
             QTimer.singleShot(100, self.start_processing)
             return
         
-        # Extract just the measurement IDs
-        measurement_ids = [m[0] for m in measurements]
+        # Sort by mic position (0 first) and keep only the UUIDs
+        try:
+            measurement_ids = [
+                m['uuid']
+                for m in sorted(measurements, key=lambda x: x.get('position', 0))
+            ]
+        except (TypeError, KeyError):
+            # backward-compatibility with the old tuple format: (uuid, position, ...)
+            measurement_ids = [
+                m[0] for m in sorted(measurements, key=lambda x: x[1] if len(m) > 1 else 0)
+            ]
         mode = state['mode']
         
         retry_msg = f" (Retry {self.current_retry + 1}/{self.max_retries})" if self.current_retry > 0 else ""

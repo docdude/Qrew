@@ -15,6 +15,7 @@ from Qrew_common import SPEAKER_LABELS, SPEAKER_CONFIGS
 from Qrew_messagebox import QrewMessageBox, QrewFileDialog
 import Qrew_settings as qs
 from Qrew_micwidget_icons import MicPositionWidget
+import Qrew_resources
 
 # expose speaker configs for MainWindow
 def get_speaker_configs():   
@@ -85,25 +86,32 @@ def place_dialog_beside_parent(dialog, parent, side="right", gap=20):
 class PositionDialog(QDialog):
     def __init__(self, position, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Position Change")
-        self.setFixedSize(450, 200)
-        self.setModal(True)
-        center_dialog_on_parent(self, parent)  
 
-        layout = QVBoxLayout()
-       # layout.setSpacing(15)
-        layout.setContentsMargins(0, 20, 0, 20)
-        
-        msg = "Make sure REW is running and mic is at position 0 (MLP)" if position == 0 \
-            else f"Move mic to position {position} and press OK to continue"
-        
+        self.setWindowTitle("Position Change")
+        self.setFixedSize(450, 180)
+        self.setModal(True)
+        center_dialog_on_parent(self, parent)
+
+        # ── main vertical layout ──────────────────────────────────
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 20, 0, 20)
+        vbox.setSpacing(10)                         # space between label & button
+
+        # message label
+        msg = ("Make sure REW is running and mic is at position 0 (MLP)"
+               if position == 0
+               else f"Move mic to position {position} and press OK to continue")
+
         label = QLabel(msg)
-        label.setWordWrap(False)
         label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-        
-        button = Button("OK")
-        button.setStyleSheet('''
+        label.setWordWrap(False)
+        vbox.addWidget(label)
+
+        # ── centred button row ───────────────────────────────────
+        btn = Button("OK")
+        btn.setMinimumWidth(200)
+        btn.clicked.connect(self.accept)
+        btn.setStyleSheet('''
             QPushButton {
                 background-color: #4CAF50;
                 color: white;
@@ -117,11 +125,14 @@ class PositionDialog(QDialog):
                 background-color: #45a049;
             }
         ''')
-        button.clicked.connect(self.accept)
-        layout.addWidget(button)
-        layout.setAlignment(Qt.AlignCenter)
-        
-        self.setLayout(layout)
+
+        hbox = QHBoxLayout()
+        hbox.addStretch()
+        hbox.addWidget(btn)
+        hbox.addStretch()
+
+        vbox.addLayout(hbox)        # add the centred row to the dialog
+
 
 class MeasurementQualityDialog(QDialog):
     def __init__(self, measurement_info, parent=None):
@@ -1498,13 +1509,13 @@ class MicPositionVisualizationDialog(QDialog):
 
        
        # place_dialog_beside_parent(self, parent, side="right")
-        self.bg_source = QPixmap("banner_500x680.png")
+        self.bg_source = QPixmap(":/banner_500x680.png")
         self.bg_opacity = 0.10
         set_background_image(self)
         # Create the visualization widget
         self.mic_widget = MicPositionWidget(
-            "/Users/juanloya/Documents/qrew/qrew/hometheater_base_persp.png", 
-            "/Users/juanloya/Documents/qrew/qrew/room_layout_persp.json"
+            ":/hometheater_base_persp.png", 
+            ":/room_layout_persp.json"
         )
         self.mic_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         # Set to not show speaker icons for full view
@@ -1546,11 +1557,12 @@ class MicPositionVisualizationDialog(QDialog):
         main.setContentsMargins(0, 0, 0, 0)
         main.addWidget(centre, 1)
         main.addLayout(button_layout)
+        place_dialog_beside_parent(self, parent, side="right")
+
         # ── FINALISE GEOMETRY ──────────────────────────
         self.layout().activate()      # ensure stretches/spacers are honoured
         self.adjustSize()             # dialog now hugs the contents
         self.setMinimumSize(self.MIN_W, self.MIN_H)
-        place_dialog_beside_parent(self, parent, side="right")
 
     def toggle_stay_on_top(self, checked):
         if checked:

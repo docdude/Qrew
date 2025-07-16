@@ -39,6 +39,7 @@ from Qrew_dialogs import (SettingsDialog, PositionDialog, MeasurementQualityDial
                            RepeatMeasurementDialog, DeleteSelectedMeasurementsDialog, REWConnectionDialog, get_speaker_configs, MicPositionVisualizationDialog)
 
 from Qrew_micwidget_icons import MicPositionWidget, SofaWidget
+import Qrew_resources
 
 # Force Windows to use IPv4 for all requests
 if platform.system() == "Windows":
@@ -58,7 +59,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Qrew")
         self.resize(640, 880)
         self.setMinimumSize(600, 860)
-        self.bg_source = QPixmap("banner_500x680.png")   # original file
+        self.bg_source = QPixmap(":/banner_500x680.png")   # original file
         self.bg_opacity = 0.35                           # user-chosen α
         set_background_image(self)                                 # first fill
         #self.app_settings = qs._load()
@@ -114,7 +115,7 @@ class MainWindow(QMainWindow):
        # self.settings_btn.setIcon(QIcon("gear@2x.png"))
         self.settings_btn.setIconSize(QSize(20, 20))
         self.settings_btn.setToolTip("Settings")
-        base_pix = QPixmap("gear@2x.png")            # transparent PNG
+        base_pix = QPixmap(":/icons/gear@2x.png")            # transparent PNG
         hover_pix = tint(base_pix, QColor("#00A2FF"))  # cyan tint
 
         icon = QIcon()
@@ -1583,8 +1584,8 @@ class MainWindow(QMainWindow):
             hbox.addStretch()
             if not getattr(self, 'compact_mic_widget', None):
                 self.compact_mic_widget = MicPositionWidget(
-                    'hometheater_base_persp.png',
-                    'room_layout_persp.json'
+                    ':/hometheater_base_persp.png',
+                    ':/room_layout_persp.json'
                 )
             hbox.addWidget(self.compact_mic_widget)
             hbox.addStretch()

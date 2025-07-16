@@ -427,7 +427,7 @@ def start_cross_corr_align(channel, measurement_ids, status_callback=None, error
     
     payload = {
         "processName": "Cross corr align",
-        "measurementIndices": measurement_ids,
+        "measurementUUIDs": measurement_ids,
         "parameters": {},
         "resultUrl": "http://127.0.0.1:5555/rew-status"
     }
@@ -473,7 +473,7 @@ def start_vector_avg(channel, measurement_ids, status_callback=None, error_callb
     
     payload = {
         "processName": "Vector Average",
-        "measurementIndices": measurement_ids,
+        "measurementUUIDs": measurement_ids,
         "parameters": {},
         "resultUrl": "http://127.0.0.1:5555/rew-status"
     }

@@ -1,0 +1,10 @@
+<RCC>
+    <qresource prefix="/" recursive="yes">
+        <file>banner_500x680.png</file>
+        <file>sofa.png</file>
+        <file>hometheater_base_persp.png</file>
+        <file>sofa_coordinates.json</file>
+        <file>room_layout_persp.json</file>
+        <file>icons</file>
+    </qresource>
+</RCC>

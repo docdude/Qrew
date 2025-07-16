@@ -3,7 +3,8 @@ import json
 import math
 from PyQt5.QtWidgets import QWidget, QLabel, QApplication
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QPen, QColor
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRect
+from PyQt5.QtCore import Qt, QTimer, QPoint, QFile, QTextStream 
+import Qrew_resources
 
 class MicPositionWidget(QWidget):
     def __init__(self, image_path, layout_path):
@@ -15,9 +16,9 @@ class MicPositionWidget(QWidget):
         self.current_scale = 1.0
         self.setFixedSize(self.background.size())
 
-        with open(layout_path, "r") as f:
-            self.layout_data = json.load(f)
-
+      #  with open(layout_path, "r") as f:
+       #     self.layout_data = json.load(f)
+        self.layout_data = self._load_json(layout_path)
         self.speakers = self.layout_data["speakers"]
         self.mics = self.layout_data["mics"]
         self.labels = {}
@@ -42,7 +43,22 @@ class MicPositionWidget(QWidget):
 
         self.init_labels()
 
-
+    # ────────────────────────────────────────────────────────────
+    # helper that understands both normal paths and Qt resources
+    # ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _load_json(path):
+        if path.startswith(':/'):                 # Qt resource
+            qf = QFile(path)
+            if not qf.open(QFile.ReadOnly | QFile.Text):
+                raise FileNotFoundError(f"Cannot open Qt-resource {path}")
+            data = bytes(qf.readAll()).decode('utf-8')
+            qf.close()
+            return json.loads(data)
+        else:                                     # normal file
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+            
     def set_flash_state(self, is_flashing):
         """Set whether animations should be flashing"""
         self.flash_state = is_flashing
@@ -166,7 +182,7 @@ class MicPositionWidget(QWidget):
             x = int(x * self.current_scale)
             y = int(y * self.current_scale)
             
-            pix = QPixmap(f"{self.icon_folder}{key}.png")
+            pix = QPixmap(f":/icons/{key}.png")
             self.speaker_pixmaps[key] = pix
 
             lbl = QLabel(self)
@@ -278,7 +294,7 @@ class MicPositionWidget(QWidget):
                   #  tri = 1.0 - tri
                     opacity = int(250 * (1 - phase / 60))
                     #radius = dot_wave_base + int((phase / 60) * dot_wave_max)
-                    radius = dot_wave_base + int(dot_wave_max * t)#int(4 * tri * self.current_scale)
+                    radius = dot_wave_base + int(dot_wave_max * tri)#int(4 * tri * self.current_scale)
 
                     pen = QPen(QColor(255, 0, 0, opacity))
                     pen.setWidth(max(1, int(2 * self.current_scale)))
@@ -332,7 +348,7 @@ class SofaWidget(MicPositionWidget):
     """
     DOT_BASE = 56                          
 
-    def __init__(self, png='/Users/juanloya/Documents/qrew/qrew/sofa.png', json_file='/Users/juanloya/Documents/qrew/qrew/sofa_coordinates.json'):
+    def __init__(self, png=':/sofa.png', json_file=':/sofa_coordinates.json'):
         super().__init__(png, json_file)
         self._flash = False
 
@@ -429,7 +445,7 @@ class SofaWidget(MicPositionWidget):
 
             opacity = int(250 * (1 - phase / 60))
             #radius = dot_wave_base + int((phase / 60) * dot_wave_max)
-            radius = dot_wave_base + int(dot_wave_max * t)#int(4 * tri * self.current_scale)
+            radius = dot_wave_base + int(dot_wave_max * tri)#int(4 * tri * self.current_scale)
 
         #    radius = dot_wave_base + int((phase / 60) * dot_wave_max)
             pen = QPen(QColor(255, 0, 0, opacity))
@@ -445,7 +461,7 @@ class SofaWidget(MicPositionWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    widget = MicPositionWidget("hometheater_base_persp.png", "room_layout_persp.json")
+    widget = MicPositionWidget(":/hometheater_base_persp.png", ":/room_layout_persp.json")
     widget.set_active_mic(0)
 
     # Test: Cycle mic + animate 2 speakers
