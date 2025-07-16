@@ -249,11 +249,12 @@ class MicPositionWidget(QWidget):
             self.ripple_phase = 0  # Reset phase when not flashing
         # Scale animation elements
         dot_wave_base = int(12 * self.current_scale)
-        dot_wave_max = int(20 * self.current_scale)
+     #   dot_wave_max = int(20 * self.current_scale)
         dot_glow_radius = int(20 * self.current_scale)
         glow_radius = int(30 * self.current_scale)
         wave_base = int(20 * self.current_scale)
         wave_max = int(60 * self.current_scale)
+        dot_wave_max = int(12 * self.current_scale)   # how far outside dot
 
         # Mic animation
         if self.flash_state and self.active_mic:
@@ -267,15 +268,25 @@ class MicPositionWidget(QWidget):
                 painter.setPen(Qt.NoPen)
                 painter.drawEllipse(QPoint(x, y), dot_glow_radius, dot_glow_radius)
                 for i in range(3):
+                 #   max_extra = int(12 * self.current_scale)   # how far outside dot
+                    tri = (self.ripple_phase % 30) / 30.0        # 0..1
+                   
+                    tri = 1.0 - tri                          # shrink
+
                     phase = (self.ripple_phase + i * 20) % 60
+                 #   tri = abs((self.ripple_phase % 30) - 15) / 15.0  # 0..1..0
+                  #  tri = 1.0 - tri
                     opacity = int(250 * (1 - phase / 60))
-                    radius = dot_wave_base + int((phase / 60) * dot_wave_max)
+                    #radius = dot_wave_base + int((phase / 60) * dot_wave_max)
+                    radius = dot_wave_base + int(dot_wave_max * t)#int(4 * tri * self.current_scale)
+
                     pen = QPen(QColor(255, 0, 0, opacity))
                     pen.setWidth(max(1, int(2 * self.current_scale)))
                     painter.setPen(pen)
                     painter.setBrush(Qt.NoBrush)
                     #painter.drawEllipse(QPoint(x + offset_x, y + offset_y), radius, radius)
                     painter.drawEllipse(QPoint(x, y), radius, radius)
+
 
         # Speaker animations  
         if self.flash_state and self.active_speakers:
@@ -410,9 +421,17 @@ class SofaWidget(MicPositionWidget):
         dot_wave_base   = int(30 * self.current_scale)
         dot_wave_max   = int(80 * self.current_scale)
         for i in range(3):
+            tri = (self.ripple_phase % 30) / 30.0        # 0..1
+            
+            tri = 1.0 - tri                          # shrink
+
             phase = (self.ripple_phase + i * 20) % 60
+
             opacity = int(250 * (1 - phase / 60))
-            radius = dot_wave_base + int((phase / 60) * dot_wave_max)
+            #radius = dot_wave_base + int((phase / 60) * dot_wave_max)
+            radius = dot_wave_base + int(dot_wave_max * t)#int(4 * tri * self.current_scale)
+
+        #    radius = dot_wave_base + int((phase / 60) * dot_wave_max)
             pen = QPen(QColor(255, 0, 0, opacity))
             pen.setWidth(max(1, int(2 * self.current_scale)))
             painter.setPen(pen)
