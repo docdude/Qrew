@@ -166,6 +166,53 @@ def start_measurement(sample_name, stimulus_path, status_callback=None, error_ca
             error_callback("Error", err_msg)
         return False, err_msg
 
+def cancel_measurement(status_callback=None, error_callback=None):
+    """
+    Ask REW to abort the running measurement.
+    Returns (success_bool, message_or_None)
+    """
+    try:
+        if status_callback:
+            status_callback('Cancelling measurement...')
+
+        requests.post(f"{REW_API_BASE_URL}/measure/command", json={"command": "Cancel"}).raise_for_status()
+
+        return True, None
+    
+    except requests.RequestException as e:
+        err_msg = f"Error canceling measurement': {e}"
+        if status_callback:
+            status_callback(f"ERROR: {err_msg}")
+        if error_callback:
+            error_callback("Measurement Error", err_msg)
+        return False, err_msg
+    except Exception as e:
+        err_msg = f"Unexpected error: {e}"
+        if status_callback:
+            status_callback(f"ERROR: {err_msg}")
+        if error_callback:
+            error_callback("Error", err_msg)
+        return False, err_msg
+
+def get_ir_for_measurement(measurement_uuid):
+    try:
+        response = requests.get(f"{REW_API_BASE_URL}/measurements/{measurement_uuid}/impulse-response?normalised=false")
+        response.raise_for_status()
+        ir = response.json()
+
+        if not ir:
+            print(f"No impulse response found for UUID: {measurement_uuid}")
+            return None
+        
+        return ir
+        
+    except requests.RequestException as e:
+        print(f"REW API Error getting impulse response for {measurement_uuid}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error parsing impulse response for {measurement_uuid}: {e}")
+        return None
+    
 def get_all_measurements():
     try:
         response = requests.get(f"{REW_API_BASE_URL}/measurements")

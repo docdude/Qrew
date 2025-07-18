@@ -3,11 +3,11 @@ import time
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 
 from Qrew_api_helper import (start_capture, get_all_measurements, start_cross_corr_align, start_vector_avg, get_vector_average_result,  rename_measurement, 
-                             get_measurement_by_uuid, get_measurement_distortion_by_uuid, get_measurement_uuid, delete_measurement_by_uuid,
+                             get_measurement_by_uuid, get_measurement_distortion_by_uuid, get_measurement_uuid, get_ir_for_measurement, delete_measurement_by_uuid,
                               subscribe_to_rta_distortion, start_rta, stop_rta, unsubscribe_from_rta_distortion, set_rta_configuration, set_rta_distortion_configuration_sine, set_rta_distortion_configuration_sweep  )
 from Qrew_message_handlers import coordinator, rta_coordinator
 
-from Qrew_measurement_metrics import evaluate_measurement, combine_sweep_and_rta_results
+from Qrew_measurement_metrics import evaluate_measurement, calculate_rew_metrics_from_ir, combine_sweep_and_rta_results, combine_and_score_metrics
 from Qrew_vlc_helper_v2 import find_sweep_file, play_file_with_callback
 import Qrew_settings as qs
 
@@ -35,7 +35,14 @@ class MeasurementWorker(QThread):
         self.continue_signal.connect(self.continue_measurement)
         self.max_retries = 3
         self.current_retry = 0
-        self.check_timer = None  # Add timer reference
+        #self.check_timer = None  # Add timer reference
+        # single reusable poll timer (lives in worker thread)
+       # self._poll_timer = QTimer()
+        #self._poll_timer.setSingleShot(True)
+        #self._poll_timer.timeout.connect(self.check_measurement_complete)
+        # ensure timer runs in worker thread once thread starts
+       # self._poll_timer.moveToThread(self)
+
         self._waiting_for_position_dialog = False
 
     def run(self):
@@ -262,52 +269,54 @@ class MeasurementWorker(QThread):
         elif action == 'stop':
             # Stop the measurement process
             self.stop_and_finish()
+    # ─────────────────────────────────────────────────────────────
+    #  Completion Polling
+    # ─────────────────────────────────────────────────────────────
+    def _init_poll_timer(self):
+        """Internal: one-time timer setup."""
+        if getattr(self, "_poll_timer", None) is None:
+            self._poll_timer = QTimer(self)
+            self._poll_timer.setInterval(200)          # ms
+            self._poll_timer.timeout.connect(self._poll_measurement)
 
     def start_completion_check(self):
-        """Start checking for measurement completion"""
+        """
+        Begin / restart polling coordinator for measurement completion.
+        Safe to call repeatedly; idempotent.
+        """
         self.timeout_count = 0
-        
-        # Ensure any existing timer is properly stopped
-        if hasattr(self, 'check_timer') and self.check_timer:
-            self.check_timer.stop()
-            self.check_timer.deleteLater()
-            self.check_timer = None
-            
-        # Small delay before starting checks
-        QTimer.singleShot(100, self.check_measurement_complete)
+        self._init_poll_timer()
+        if not self._poll_timer.isActive():
+            self._poll_timer.start()
 
-    def check_measurement_complete(self):
-        """Check if measurement is complete with better error handling"""
+    def _poll_measurement(self):
+        """Timer slot: check coordinator + timeout."""
         if not self.running:
             return
-            
-        # Check if coordinator event is set
+
+        # finished? (coordinator event set by API helper)
         if coordinator.event.is_set():
             status, error_msg = coordinator.status, coordinator.error_message
-            
+
             if status == 'success':
                 self.on_measurement_success()
-            elif status in ['abort', 'error']:
+            elif status in ('abort', 'error'):
                 self.handle_measurement_failure(error_msg or f"Measurement {status}")
             elif status == 'timeout':
                 self.handle_measurement_failure("Measurement timed out")
             else:
-                # Unknown status, treat as success for backward compatibility
+                # Unknown -> treat as success (backward compat)
                 self.on_measurement_success()
-                
-        elif self.timeout_count >= 1500:  # 5 minutes timeout (1500 * 200ms)
+            return  # handled; wait for next cycle to restart
+
+        # not yet finished: check for overall timeout
+        self.timeout_count += 1
+        if self.timeout_count >= 1500:   # 5 min @200ms
             coordinator.trigger_timeout()
             self.handle_measurement_failure("Measurement timed out after 5 minutes")
-        else:
-            self.timeout_count += 1
-            # Schedule next check using a proper timer
-            if self.running:
-                self.check_timer = QTimer()
-                self.check_timer.timeout.connect(self.check_measurement_complete)
-                self.check_timer.setSingleShot(True)
-                self.check_timer.start(200)
 
-    def evaluate_measurement_metrics(self):
+
+    def calculate_measurement_metrics(self):
         """Evaluate and emit measurement metrics"""
         try:
             measurement_uuid = get_measurement_uuid()
@@ -324,41 +333,70 @@ class MeasurementWorker(QThread):
             if not measurement_distortion:
                 self.status_update.emit(f"No distortion data found for measurement ID: {measurement_uuid}")
                 return
-                
+            impulse_response =  get_ir_for_measurement(measurement_uuid)
+
+            if not impulse_response:
+                self.status_update.emit(f"No impulse response data found for measurement ID: {measurement_uuid}")
+
             # Extract data
             thd_json = measurement_distortion
-            ir_json = measurements
+            info_json = measurements
+            ir_json = impulse_response
             coherence_array = None
             
-            if not thd_json or not ir_json:
-                self.status_update.emit("Incomplete distortion data for evaluation.")
+            if not thd_json or not info_json or not ir_json :
+                self.status_update.emit("Incomplete measurement data for evaluation.")
                 return
             channel   = self.measurement_state['channels'][self.measurement_state['channel_index']]
             position  = self.measurement_state['current_position']
             # Evaluate metrics
-            result = evaluate_measurement(thd_json, ir_json, coherence_array)
-            if not result:
+            rew_metrics = calculate_rew_metrics_from_ir(ir_json)
+            freq_metrics = evaluate_measurement(thd_json, info_json, coherence_array)
+            combined_score = combine_and_score_metrics(rew_metrics, freq_metrics)
+            if not freq_metrics:
                 self.status_update.emit("Failed to evaluate measurement metrics.")
                 return
                 
             # Emit metrics for display
-            result['uuid'] = measurement_uuid
-            result['channel']   = channel                   
-            result['position']  = position                 
+           # result['uuid'] = measurement_uuid
+            #result['channel']   = channel                   
+            #result['position']  = position                 
+            #self.metrics_update.emit(result)
+            # Combine results
+            result = {
+                'score': combined_score['score'],
+                'rating': combined_score['rating'],
+                'channel': channel,
+                'position': position,
+                'uuid': measurement_uuid,
+                'detail': {
+                    **freq_metrics['detail'],
+                    **rew_metrics['detail']
+              #     'peak_value': rew_metrics['peak_value'],
+               #     'peak_time_ms': rew_metrics['peak_time_ms'],
+                #    'rew_snr_dB': rew_metrics['snr_dB'],      # REW's exact SNR
+                 #   'rew_sdr_dB': rew_metrics['sdr_dB'],      # REW's exact SDR
+                  #  'ir_peak_noise_dB': rew_metrics['ir_peak_noise_dB'],
+                   # 'signal_dbfs': rew_metrics['signal_dbfs'],
+                 #   'dist_dbfs': rew_metrics['dist_dbfs'],
+                  #  'noise_dbfs': rew_metrics['noise_dbfs']
+                }
+            }
             self.metrics_update.emit(result)
-            
             # Send detailed info to status
-            detail = result.get("detail", {})
-            detail_str = ", ".join(f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" 
-                                 for k, v in detail.items())
-            self.status_update.emit(f"Metrics: {detail_str}")
+      #      detail = result.get("detail", {})
+       #     detail_str = ", ".join(f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" 
+        #                         for k, v in detail.items())
+         #   self.status_update.emit(f"Metrics: {detail_str}")
             
         except Exception as e:
-            print(f"Error in evaluate_measurement_metrics: {e}")
+            print(f"Error in calculate_measurement_metrics: {e}")
             self.status_update.emit(f"Error evaluating metrics: {str(e)}")
 
     def on_measurement_success(self):
         """Called when measurement completes successfully"""
+        # STOP the timer to prevent multiple calls
+        self._stop_poll_timer()
         state = self.measurement_state
         
         if state.get('repeat_mode', False):
@@ -367,7 +405,7 @@ class MeasurementWorker(QThread):
             self.status_update.emit(f"Completed remeasurement of {channel}_pos{position}")
             
             # Evaluate metrics before moving on
-            self.evaluate_measurement_metrics()
+            self.calculate_measurement_metrics()
             rating_ok = (
                     self.parent_window
                     and (channel, position) in self.parent_window.measurement_qualities
@@ -400,7 +438,7 @@ class MeasurementWorker(QThread):
             self.status_update.emit(f"Completed {current_ch}_pos{self.measurement_state['current_position']}")
             
             # Evaluate metrics before moving on
-            self.evaluate_measurement_metrics()
+            self.calculate_measurement_metrics()
             
             # Turn off flash after success
           #  self.grid_flash_signal.emit(False)
@@ -422,6 +460,8 @@ class MeasurementWorker(QThread):
 
     def handle_measurement_failure(self, error_msg):
         """Handle measurement failure with retry logic"""
+        # STOP the timer to prevent multiple calls
+        self._stop_poll_timer()
         if "stimulus" in error_msg.lower() or "no stimulus" in error_msg.lower():
             self.status_update.emit("Measurement aborted: stimulus file not loaded.")
             self.error_occurred.emit("Repeat measurement aborted",
@@ -452,31 +492,42 @@ class MeasurementWorker(QThread):
             self.measurement_state['channel_index'] += 1
             QTimer.singleShot(1000, self.continue_measurement)
 
+    # ─────────────────────────────────────────────────────────────
+    #  Shutdown helpers
+    # ─────────────────────────────────────────────────────────────
+    def _stop_poll_timer(self):
+        t = getattr(self, "_poll_timer", None)
+        if t is not None:
+            t.stop()
+            t.deleteLater()
+            self._poll_timer = None
 
     def stop(self):
-        """External hard-stop (e.g. MainWindow.closeEvent)"""
-        if not self.running:        # already stopped
-            return
-        self.stop_and_finish()      # <- delegate, emits `finished` & quits
+        """Immediate stop requested by UI (close / cancel)."""
+        self.running = False
+        self._stop_poll_timer()
 
+        self.quit()
+        self.wait()
 
     def stop_and_finish(self):
+        """
+        Graceful normal completion.
+        Emits finished(), stops polling, ends thread loop.
+        """
         if self.running:
             self.running = False
-            if self.check_timer:
-                self.check_timer.stop()
-                self.check_timer = None
-         #   self.grid_flash_signal.emit(False)
-            
+            # self.grid_flash_signal.emit(False)
+            self.finished.emit()
             # Clear visualization animations
             self.visualization_update.emit(
                 self.measurement_state.get('current_position', 0), 
                 [],  # No active speakers
                 False  # No flash
             )
-            
-            self.finished.emit()
+        self._stop_poll_timer()
         self.quit()
+
 
 class ProcessingWorker(QThread):
     """Worker thread for handling cross correlation and vector averaging with error recovery"""
@@ -491,7 +542,12 @@ class ProcessingWorker(QThread):
         self.timeout_count = 0
         self.max_retries = 2
         self.current_retry = 0
-        self.check_timer = None
+        #self.check_timer = None
+     #   self._poll_timer = QTimer()
+      #  self._poll_timer.setSingleShot(True)
+       # self._poll_timer.timeout.connect(self.check_measurement_complete)
+        # ensure timer runs in worker thread once thread starts
+       # self._poll_timer.moveToThread(self)
 
     def run(self):
         QTimer.singleShot(0, self.start_processing)
@@ -568,46 +624,48 @@ class ProcessingWorker(QThread):
                 self.start_completion_check()
             else:
                 self.handle_processing_failure(f"Failed to start vector averaging: {error_msg}")
+    # ─────────────────────────────────────────────────────────────
+    #  Completion Polling
+    # ─────────────────────────────────────────────────────────────
+    def _init_poll_timer(self):
+        if getattr(self, "_poll_timer", None) is None:
+            self._poll_timer = QTimer(self)
+            self._poll_timer.setInterval(200)
+            self._poll_timer.timeout.connect(self._poll_processing)
 
     def start_completion_check(self):
-        """Start checking for operation completion"""
         self.timeout_count = 0
-        if self.check_timer:
-            self.check_timer.stop()
-            self.check_timer = None
-        self.check_operation_complete()
+        self._init_poll_timer()
+        if not self._poll_timer.isActive():
+            self._poll_timer.start()
 
-    def check_operation_complete(self):
-        """Check if current operation is complete with error handling"""
+    def _poll_processing(self):
         if not self.running:
             return
-            
+
         if coordinator.event.is_set():
             status, error_msg = coordinator.status, coordinator.error_message
-            
+
             if status == 'success':
                 self.on_operation_success()
-            elif status in ['abort', 'error']:
+            elif status in ('abort', 'error'):
                 self.handle_processing_failure(error_msg or f"Processing {status}")
             elif status == 'timeout':
                 self.handle_processing_failure("Processing timed out")
             else:
-                # Unknown status, treat as success for backward compatibility
                 self.on_operation_success()
-                
-        elif self.timeout_count >= 1500:  # 5 minutes timeout
+            return
+
+        self.timeout_count += 1
+        if self.timeout_count >= 1500:
             coordinator.trigger_timeout()
             self.handle_processing_failure("Operation timed out after 5 minutes")
-        else:
-            self.timeout_count += 1
-            if self.running:
-                self.check_timer = QTimer()
-                self.check_timer.timeout.connect(self.check_operation_complete)
-                self.check_timer.setSingleShot(True)
-                self.check_timer.start(200)
+
 
     def on_operation_success(self):
         """Called when current operation completes successfully"""
+        self._stop_poll_timer()
+
         state = self.processing_state
         current_channel = state['channels'][state['channel_index']]
         mode = state['mode']
@@ -648,6 +706,8 @@ class ProcessingWorker(QThread):
 
     def handle_processing_failure(self, error_msg):
         """Handle processing failure with retry logic"""
+        self._stop_poll_timer()
+
         self.status_update.emit(f"Processing error: {error_msg}")
         
         if self.current_retry < self.max_retries:
@@ -670,22 +730,28 @@ class ProcessingWorker(QThread):
             
             QTimer.singleShot(1000, self.start_processing)
 
-    def stop(self):
-        """External hard-stop (e.g. MainWindow.closeEvent)"""
-        if not self.running:        # already stopped
-            return
-        self.stop_and_finish()      # <- delegate, emits `finished` & quits
+    # ─────────────────────────────────────────────────────────────
+    #  Shutdown helpers
+    # ─────────────────────────────────────────────────────────────
+    def _stop_poll_timer(self):
+        t = getattr(self, "_poll_timer", None)
+        if t is not None:
+            t.stop()
+            t.deleteLater()
+            self._poll_timer = None
 
+    def stop(self):
+        self.running = False
+        self._stop_poll_timer()
+        self.quit()
+        self.wait()
 
     def stop_and_finish(self):
         if self.running:
             self.running = False
-            if self.check_timer:
-                self.check_timer.stop()
-                self.check_timer = None
-            self.finished.emit()                 # GUI hears this
-        self.quit()                              # exit thread loop
-                  
+            self.finished.emit()
+        self._stop_poll_timer()
+        self.quit()
 
 class RTAWorker(QThread):
     """Worker thread for RTA verification measurements"""

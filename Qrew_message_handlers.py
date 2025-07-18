@@ -478,3 +478,5 @@ def test_endpoints():
 
 def run_flask_server():
     app.run(host="0.0.0.0", port=5555, debug=False, use_reloader=False, threaded=True)
+
+    app.config['ENV'] = 'production'

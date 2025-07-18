@@ -1,5 +1,5 @@
 # Qrew_vlc_helper_v2.py – non-blocking VLC wrapper
-import os, platform, subprocess, threading, queue, time, shutil, re
+import os, platform, subprocess, threading, queue, time, shutil, re, signal
 from pathlib import Path
 from typing import Callable, Optional
 import Qrew_common
@@ -21,6 +21,11 @@ class VLCPlayer:
     def __init__(self):
         self._thread  = None
         self._playing = False
+        self._player = None     # libvlc player
+        self._instance = None   # libvlc instance
+        self._process = None    # subprocess
+        self._system = platform.system()
+
 
     # -------------------- public entry point --------------------------
     def play(self,
@@ -32,25 +37,30 @@ class VLCPlayer:
         Start playback and return immediately.
         *on_finished* is called in a background thread when playback ends.
         """
+        self.stop_and_exit()
+
         if backend == "auto":
             backend = "libvlc" if vlc else "subprocess"
-
-        if backend == "libvlc":
-            if not vlc:
-                raise RuntimeError("python-vlc not installed")
-            self._play_libvlc(path, show_gui, on_finished)
-        elif backend == "subprocess":
-            self._play_subproc(path, show_gui, on_finished)
-        else:
-            raise ValueError("backend must be 'libvlc', 'subprocess', or 'auto'")
+        try:
+            if backend == "libvlc":
+                if not vlc:
+                    raise RuntimeError("python-vlc not installed")
+                self._play_libvlc(path, show_gui, on_finished)
+            elif backend == "subprocess":
+                self._play_subproc(path, show_gui, on_finished)
+            else:
+                raise ValueError("backend must be 'libvlc', 'subprocess', or 'auto'")
+        except Exception as e:
+            print(f"Playback error: {e}")
+            self.stop_and_exit()
 
     # -------------------- libvlc path --------------------------------
     def _play_libvlc(self, path, show_gui, on_finished):
         intf_flag = "" if show_gui else "--intf=dummy"
-        instance  = vlc.Instance("--play-and-exit", intf_flag)
-        player    = instance.media_player_new()
-        player.set_media(instance.media_new(Path(path).as_posix()))
-        player.audio_set_volume(100)
+        self._instance  = vlc.Instance("--play-and-exit", intf_flag)
+        self._player    = self._instance.media_player_new()
+        self._player.set_media(self._instance.media_new(Path(path).as_posix()))
+        self._player.audio_set_volume(100)
         # Finish queue + callback
         done_q = queue.Queue()
 
@@ -59,7 +69,7 @@ class VLCPlayer:
 
         evmgr = player.event_manager()
         evmgr.event_attach(vlc.EventType.MediaPlayerEndReached, _on_end)
-        player.play()
+        self._player.play()
         self._playing = True
 
         # watchdog thread waits for queue then fires callback
@@ -69,7 +79,7 @@ class VLCPlayer:
             if on_finished:
                 on_finished()
             player.release()
-            instance.release()
+            self.stop_and_exit()
 
         threading.Thread(target=_watch, daemon=True).start()
 
@@ -83,43 +93,144 @@ class VLCPlayer:
         if not show_gui:
             cmd += ["--intf", "dummy"]
 
-        proc = subprocess.Popen(cmd)
+        # Ensure process group for better termination on Unix-like systems
+        if self._system != "Windows":
+            self._process = subprocess.Popen(cmd, start_new_session=True)
+        else:
+            self._process = subprocess.Popen(cmd)
+
         self._playing = True
 
         def _watch():
-            proc.wait()
+            self._process.wait()
             self._playing = False
             if on_finished:
                 on_finished()
+            self.stop_and_exit()
 
         threading.Thread(target=_watch, daemon=True).start()
+    
+    def stop_and_exit(self):
+        try:
+            proc = self._process  # local copy
+
+            if self._player and hasattr(self._player, 'stop'):
+                try:
+                    self._player.stop()
+                except Exception as e:
+                    print(f"Error stopping libvlc player: {e}")
+
+            if self._player:
+                try:
+                    self._player.release()
+                except Exception as e:
+                    print(f"Error releasing libvlc player: {e}")
+                self._player = None
+
+            if self._instance:
+                try:
+                    self._instance.release()
+                except Exception as e:
+                    print(f"Error releasing libvlc instance: {e}")
+                self._instance = None
+
+            if proc is not None and isinstance(proc, subprocess.Popen):
+                try:
+                    if proc.poll() is None:
+                        try:
+                            if self._system == 'Windows':
+                                subprocess.call(['taskkill', '/F', '/T', '/PID', str(proc.pid)])
+                            else:
+                                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                                time.sleep(0.1)
+                                if proc.poll() is None:
+                                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                        except Exception as e:
+                            print(f"Error terminating process: {e}")
+                    else:
+                        print("Process already terminated")
+                except Exception as e:
+                    print(f"Error checking process status: {e}")
+            else:
+                print("No process to terminate or invalid process object")
+
+            self._process = None
+            self._playing = False
+
+        except Exception as e:
+            print(f"Unexpected error in stop_and_exit: {e}")
+
 
     # -------------------- helpers ------------------------------------
     @staticmethod
     def _find_vlc_exe() -> Optional[str]:
-        # Try PATH first
-        if shutil.which("vlc"):
-            return "vlc"
+        """
+        Comprehensive cross-platform VLC executable finder
+        
+        Returns:
+            str: Path to VLC executable or 'vlc' if found in PATH
+            None: If no VLC executable found
+        """
+        # Try PATH first (most reliable method)
+        vlc_path = shutil.which("vlc")
+        if vlc_path:
+            return vlc_path
 
         system = platform.system()
-        if system == "Darwin":   # macOS
-            for p in (
+        
+        # Expanded macOS search paths
+        if system == "Darwin":
+            possible_paths = [
                 "/Applications/VLC.app/Contents/MacOS/VLC",
                 "/opt/homebrew/bin/vlc",
                 "/usr/local/bin/vlc",
-            ):
-                if os.path.exists(p):
-                    return p
+                "/Applications/VLC.app/Contents/MacOS/VLC.app/Contents/MacOS/VLC",
+                os.path.expanduser("~/Applications/VLC.app/Contents/MacOS/VLC"),
+                "/Applications/VLC.app/Contents/MacOS/VLC"
+            ]
+        
+        # Expanded Windows search paths
         elif system == "Windows":
-            possible = os.environ.get("PROGRAMFILES", "C:\\Program Files")
-            for p in (
-                rf"{possible}\VideoLAN\VLC\vlc.exe",
-                rf"{possible} (x86)\VideoLAN\VLC\vlc.exe",
-            ):
-                if os.path.exists(p):
-                    return p
-        # Linux fall-back handled by PATH earlier
+            possible_drives = ['C:', 'D:']
+            possible_program_files = [
+                os.environ.get("PROGRAMFILES", "C:\\Program Files"),
+                os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")
+            ]
+            possible_paths = []
+            for drive in possible_drives:
+                for pf in possible_program_files:
+                    possible_paths.extend([
+                        rf"{pf}\VideoLAN\VLC\vlc.exe",
+                        rf"{drive}\Program Files\VideoLAN\VLC\vlc.exe",
+                        rf"{drive}\Program Files (x86)\VideoLAN\VLC\vlc.exe"
+                    ])
+        
+        # Expanded Linux search paths
+        elif system == "Linux":
+            possible_paths = [
+                "/usr/bin/vlc",
+                "/usr/local/bin/vlc",
+                "/snap/bin/vlc",
+                "/opt/vlc/bin/vlc",
+                os.path.expanduser("~/.local/bin/vlc")
+            ]
+        
+        else:
+            possible_paths = []
+
+        # Additional PATH search
+        path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+        possible_paths.extend([os.path.join(path_dir, "vlc") for path_dir in path_dirs])
+
+        # Check each possible path
+        for p in possible_paths:
+            # Expand user directory and normalize path
+            full_path = os.path.abspath(os.path.expanduser(p))
+            if os.path.exists(full_path) and os.access(full_path, os.X_OK):
+                return full_path
+
         return None
+
 
     # -------------------- status -------------------------------------
     def is_playing(self) -> bool:
@@ -238,6 +349,10 @@ def stop_playback():
 def is_playing():
     """Check if media is currently playing"""
     return _global_player.is_playing()
+
+def stop_vlc_and_exit():
+    """stop vlc player either backend and kill process"""
+    _global_player.stop_and_exit()
 
 # Legacy compatibility functions
 def stop_callback_playback():

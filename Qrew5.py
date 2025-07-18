@@ -35,13 +35,13 @@ import Qrew_common
 import Qrew_settings as qs
 
 from Qrew_api_helper import (get_measurement_count, get_measurement_by_uuid, get_all_measurements_with_uuid, get_selected_channels_with_measurements_uuid, get_measurement_distortion_by_uuid,
-                             save_all_measurements, delete_all_measurements, delete_measurement_by_uuid, delete_measurements_by_uuid,
-                             check_rew_connection, initialize_rew_subscriptions)
+                             save_all_measurements, delete_all_measurements, delete_measurement_by_uuid, delete_measurements_by_uuid, get_ir_for_measurement,
+                             check_rew_connection, initialize_rew_subscriptions, cancel_measurement)
 
-from Qrew_measurement_metrics import evaluate_measurement
+from Qrew_measurement_metrics import evaluate_measurement, calculate_rew_metrics_from_ir, combine_and_score_metrics
 from Qrew_message_handlers import rta_coordinator
 
-from Qrew_workers import MeasurementWorker, ProcessingWorker
+from Qrew_workers_v2 import MeasurementWorker, ProcessingWorker
 from Qrew_styles import tint, HTML_ICONS, set_background_image
 from Qrew_button import Button
 from Qrew_gridwidget import GridWidget
@@ -53,7 +53,9 @@ from Qrew_dialogs import (SettingsDialog, PositionDialog, MeasurementQualityDial
                            RepeatMeasurementDialog, DeleteSelectedMeasurementsDialog, REWConnectionDialog, get_speaker_configs, MicPositionVisualizationDialog)
 
 from Qrew_micwidget_icons import MicPositionWidget, SofaWidget
+from Qrew_vlc_helper_v2 import stop_vlc_and_exit
 import Qrew_resources
+
 
 # Force Windows to use IPv4 for all requests
 if platform.system() == "Windows":
@@ -338,9 +340,9 @@ class MainWindow(QMainWindow):
         # ───────────────── Metrics Display ───────────────── #
         metrics_container = QWidget()
         metrics_container.setStyleSheet("background: transparent;")
-        metrics_layout = QHBoxLayout(metrics_container)
-        metrics_layout.setContentsMargins(50, 100, 50, 0)
-        
+        metrics_layout = QVBoxLayout(metrics_container)
+        metrics_layout.setContentsMargins(20, 50, 20, 0)
+        metrics_layout.setSpacing(5)
         # Metrics label
         self.metrics_label = QLabel("")
         self.metrics_label.setStyleSheet("""
@@ -356,14 +358,31 @@ class MainWindow(QMainWindow):
         """)
         self.metrics_label.setTextFormat(Qt.RichText)
         self.metrics_label.setAlignment(Qt.AlignCenter)
-        self.metrics_label.setMinimumSize(120,30)
-       # self.metrics_label.hide()  # Initially hidden
-        
-        metrics_layout.addWidget(self.metrics_label)
-      #  main_layout.addWidget(metrics_container, alignment=Qt.AlignCenter)
-       # main_layout.addSpacing(5)
+        self.metrics_label.setMinimumSize(180, 40)
+        self.metrics_label.hide()
+        # Detail metrics label (expandable)
+        self.metrics_detail_label = QLabel("")
+        self.metrics_detail_label.setStyleSheet("""
+            QLabel { 
+                background: rgba(0, 0, 0, 0.8); 
+                color: #ccc; 
+                padding: 8px 12px; 
+                border: 1px solid #333;
+                border-radius: 4px;
+                font-size: 11px;
+                font-family: monospace;
+            }
+        """)
+        self.metrics_detail_label.setTextFormat(Qt.RichText)
+        self.metrics_detail_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.metrics_detail_label.setWordWrap(True)
+        self.metrics_detail_label.setMinimumSize(180, 100)
+        self.metrics_detail_label.setMaximumHeight(140)
+        self.metrics_detail_label.hide()  # Initially hidden
 
-        mode = qs.get("viz_view",  "Sofa View")
+        metrics_layout.addWidget(self.metrics_label)
+        metrics_layout.addWidget(self.metrics_detail_label)
+
         # Grid widget container 
         grid_container = QWidget()
         grid_container.setStyleSheet("background: transparent;")
@@ -419,7 +438,7 @@ class MainWindow(QMainWindow):
 
 
 
-        # Command button container
+        # ---------- Command button container -----------------------------
         meas_container = QWidget()
         meas_container.setStyleSheet("background: transparent;")
         meas_layout = QHBoxLayout(meas_container)
@@ -473,10 +492,27 @@ class MainWindow(QMainWindow):
         """)
         meas_layout.addWidget(self.repeat_button)
 
+        # Cancel button
+        self.cancel_button = Button("Cancel Run")
+        self.cancel_button.setStyleSheet("""
+            QPushButton {
+                background: #b33; 
+                color:#fff;
+                border:1px solid #933; 
+                border-radius:4px;
+                padding:6px 8px; 
+                font-size:12px;
+            }
+            QPushButton:hover { background:#d44; }
+        """)
+        self.cancel_button.clicked.connect(self._abort_current_run)
+        #self.cancel_button.setVisible(False)          # only when running
+        meas_layout.addWidget(self.cancel_button)
+
         main_layout.addWidget(meas_container, alignment=Qt.AlignCenter)
         main_layout.addSpacing(-15)
 
-        # Process button container
+        # ---------- Process button container -----------------------------
         cmd_container = QWidget()
         cmd_container.setStyleSheet("background: transparent;")
         cmd_layout = QHBoxLayout(cmd_container)
@@ -700,6 +736,80 @@ class MainWindow(QMainWindow):
         message_bridge.error_received.connect(self.add_error)
         QTimer.singleShot(1000, self.load_existing_measurement_qualities)  # Delay to ensure REW is connected
 
+    # ---------- GUI lockdown helpers ---------------------------------
+    _GUI_LOCKED = False
+    def _set_controls_enabled(self, on: bool):
+        """Enable/disable every control that must not be touched mid-run."""
+        global _GUI_LOCKED
+        _GUI_LOCKED = not on
+
+        for w in (
+            self.load_button,
+            self.start_button,
+            self.repeat_button,
+            self.vector_button,
+            self.cross_button,
+            self.full_button,
+            self.clear_button,
+            *self.channel_checkboxes.values(),
+            self.pos_selector,
+        ):
+            w.setEnabled(on)
+
+        # extra visual cue
+      #  self.cancel_button.setVisible(not on)      # show only while locked
+
+
+    def _abort_current_run(self):
+        # ------------------------------------------------------------------
+        # 1) Tell REW to abort the *current* capture immediately
+        # ------------------------------------------------------------------
+        try:
+            ok, msg = cancel_measurement(status_callback=self.update_status, error_callback=self.add_error)
+            if ok:
+                print("REW measurement cancelled.")
+            else:
+                print(f"REW measurement failed: {msg}")
+        except Exception as e:
+            print(f"Unable to cancel measurement via API: {e}")
+
+        ## Have to do twice REW API bug??
+        try:
+            ok, msg = cancel_measurement(status_callback=self.update_status, error_callback=self.add_error)
+            if ok:
+                print("REW measurement cancelled.")
+            else:
+                print(f"REW measurement failed: {msg}")
+        except Exception as e:
+            print(f"Unable to cancel measurement via API: {e}")
+        # ------------------------------------------------------------------
+        # 2) Make sure VLC stops playing the stimulus
+        # ------------------------------------------------------------------
+        try:
+            # helper works for both back-ends ('libvlc' or 'subprocess')
+            stop_vlc_and_exit()
+        except Exception as e:
+            print(f"Unable to stop VLC: {e}")
+
+        # ------------------------------------------------------------------
+        # 3) (existing) stop worker threads & unlock GUI
+        # ------------------------------------------------------------------
+
+        """User pressed Cancel Run."""
+        if self.measurement_worker and self.measurement_worker.isRunning():
+            self.status_label.setText("Measurement run cancelled by user.")
+            # turn off flash immediatelytop()         # or sto
+            self.measurement_worker.stop_and_finish()
+        if hasattr(self, 'processing_worker') and self.processing_worker and self.processing_worker.isRunning():
+            self.processing_worker.stop_and_finish()
+
+        # tell repeat logic we ended mid-flight: keep remaining pairs
+        if self.measurement_state.get('repeat_mode'):
+            # nothing to do, state['re_idx'] remains where it is
+            pass
+
+        self._set_controls_enabled(True)
+
 
     def eventFilter(self, source, event):
         # A single left-click anywhere inside the grid-container
@@ -764,14 +874,14 @@ class MainWindow(QMainWindow):
             channel = metrics.get("channel")          # ← from result
             position= metrics.get("position")
             uuid    = metrics.get("uuid")
-
+            detail  = metrics.get("detail", {})
             # Track quality
             if channel is not None and position is not None and uuid:
                 self.measurement_qualities[(channel, position)] = {
                     "rating": rating,
                     "score" : score,
                     "uuid"  : uuid,
-                    "detail": metrics.get("detail"),
+                    "detail": detail,
                     "title" : f"{channel}_pos{position}",
                 }
                 print(f"Tracked quality for {channel}_pos{position}: {rating} ({score:.1f}) UUID: {uuid}")
@@ -784,12 +894,81 @@ class MainWindow(QMainWindow):
                 "RETAKE":"#ff0000",
             }.get(rating, "#ffffff")
 
-            html = (f"<span style='color:{colour}; font-size:16px;font-weight:bold;'>"
+            html = (f"<span style='color:{colour}; font-size:18px;font-weight:bold;'>"
                     f"{rating}</span> "
-                    f"<span style='color:#ccc;font-size:12px;'>({score:.1f})</span>")
+                    f"<span style='color:#ccc;font-size:14px;'>({score:.1f})</span>")
+
+            if channel and position is not None:
+                html += f"<br><span style='color:#aaa; font-size:12px;'>{channel} Position {position}</span>"
 
             self.metrics_label.setText(html)
             self.metrics_label.show()
+
+            # Format detail information with proper units and formatting
+            if detail:
+                detail_lines = []
+
+                # Peak Value
+                peak_value = detail.get("peak_value")
+                if peak_value is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>Peak Value:</span> {peak_value:.9f}") 
+
+                #Peak Time (ms)
+                peak_time_ms = detail.get("peak_time_ms")
+                if peak_time_ms is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>Peak Time:</span> {peak_time_ms:.6f} ms") 
+
+                # IR peak_to_noise
+                ir_peak_noise = detail.get("ir_pk_noise_dB")
+                if ir_peak_noise is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>SNR:</span> {ir_peak_noise:.1f} dB")
+
+                # SNR
+                snr = detail.get("rew_snr_dB")
+                if snr is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>SNR:</span> {snr:.1f} dB")
+
+                # Signal to Distortion Ratio 
+                sdr = detail.get("rew_sdr_dB")
+                if sdr is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>SDR:</span> {sdr:.1f} dB")
+                
+                # Coherence (can be None)
+                coh_mean = detail.get("coh_mean")
+                if coh_mean is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>Coherence:</span> {coh_mean:.3f}")
+                
+                # THD metrics
+                # Show THD+N instead of just THD for better understanding
+                mean_thd_n = detail.get('mean_thd_n_%')
+                if mean_thd_n is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>THD+N:</span> {mean_thd_n:.3f}%")
+                
+                mean_thd = detail.get("mean_thd_%")
+                if mean_thd is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>Mean THD:</span> {mean_thd:.3f}%")
+                
+                max_thd = detail.get("max_thd_%")
+                if max_thd is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>Max THD:</span> {max_thd:.3f}%")
+                
+                low_thd = detail.get("low_thd_%")
+                if low_thd is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>Low THD:</span> {low_thd:.3f}%")
+                
+                # Harmonic ratio
+                h3_h2_ratio = detail.get("h3/h2_ratio")
+                if h3_h2_ratio is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>H3/H2 Ratio:</span> {h3_h2_ratio:.3f}")
+                
+                if detail_lines:
+                    detail_html = "<br>".join(detail_lines)
+                    self.metrics_detail_label.setText(detail_html)
+                    self.metrics_detail_label.show()
+                else:
+                    self.metrics_detail_label.hide()
+            else:
+                self.metrics_detail_label.hide()
 
         except Exception as e:
             print("Error updating metrics display:", e)
@@ -1010,6 +1189,8 @@ class MainWindow(QMainWindow):
 
         
         self.start_button.setEnabled(False)
+        # lock UI while the worker is active
+        self._set_controls_enabled(False)
         self.status_label.setText("Starting measurement process...")
         print("DEBUG channels :", self.measurement_state['channels'])
         print("DEBUG positions:", self.last_valid_positions)
@@ -1071,6 +1252,9 @@ class MainWindow(QMainWindow):
 
     def on_measurement_finished(self):
         self.start_button.setEnabled(True)
+        # unlock the GUI
+        self._set_controls_enabled(True)
+
         save_after_repeat = qs.get("save_after_repeat", False)
 
         repeat = self.measurement_state.pop("repeat_mode", False)
@@ -1284,7 +1468,9 @@ class MainWindow(QMainWindow):
         self.vector_button.setEnabled(False)
         self.full_button.setEnabled(False)
         self.start_button.setEnabled(False)
-        
+        # lock UI while the worker is active
+        self._set_controls_enabled(False)
+
         # Start processing worker
         self.processing_worker = ProcessingWorker(self.processing_state)
         self.processing_worker.status_update.connect(self.update_status)
@@ -1298,14 +1484,14 @@ class MainWindow(QMainWindow):
         self.vector_button.setEnabled(True)
         self.full_button.setEnabled(True)
         self.start_button.setEnabled(True)
+        # Enable GUI Controls
+        self._set_controls_enabled(True)
         self.status_label.setText("Processing completed.")
         if hasattr(self, 'processing_worker'):
             self.processing_worker = None
 
     def closeEvent(self, event):
         """Handle window close event"""
-       # if self.flash_timer:
-        #    self.flash_timer.stop()
         if self.measurement_worker and self.measurement_worker.isRunning():
             self.measurement_worker.stop()
         if hasattr(self, 'processing_worker') and self.processing_worker and self.processing_worker.isRunning():
@@ -1471,9 +1657,19 @@ class MainWindow(QMainWindow):
                         try:
                             measurement_data = get_measurement_by_uuid(uuid)
                             distortion_data = get_measurement_distortion_by_uuid(uuid)
-                            
+                            ir_response = get_ir_for_measurement(uuid)
                             if measurement_data and distortion_data:
-                                result = evaluate_measurement(distortion_data, measurement_data, None)
+                                freq_metrics = evaluate_measurement(distortion_data, measurement_data, None)
+                                rew_metrics = calculate_rew_metrics_from_ir(ir_response)
+                                combined_score = combine_and_score_metrics(rew_metrics, freq_metrics)
+                                result = {
+                                    'score': combined_score['score'],
+                                    'rating': combined_score['rating'],
+                                    'detail': {
+                                        **freq_metrics['detail'],
+                                        **rew_metrics['detail']
+                                    }
+                                }
                                 if result:
                                     self.measurement_qualities[(channel, position)] = {
                                         'rating': result.get('rating', 'Unknown'),

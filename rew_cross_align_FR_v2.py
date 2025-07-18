@@ -569,6 +569,82 @@ def apply_shift_to_ir(ir_data, time_shift, sample_rate):
         # Negative shift: remove samples from beginning
         return ir_data[-shift_samples:]
 
+def calculate_rew_metrics_from_ir(ir_data, sample_rate, harm_factor=0.5):
+    """
+    Calculate metrics exactly like REW using impulse response data.
+    """
+    import base64
+    import numpy as np
+    
+    # Decode the IR data
+ #   ir_data_b64 = ir_json['data']
+ #   ir_data = np.frombuffer(base64.b64decode(ir_data_b64), dtype=np.float32)
+    
+   # sample_rate = ir_json['sampleRate']
+    T = 1.0 / sample_rate  # Sample interval
+    
+    # Step 1: Find the absolute maximum (peak) index
+    abs_max_idx = np.argmax(np.abs(ir_data))
+    
+    # Step 2: Calculate time window based on harmonic factor
+    time_window = harm_factor * np.log(2.0)
+    window_samples = int(round(time_window / T))
+    
+    # Step 3: Define analysis regions
+    analysis_start = abs_max_idx - window_samples // 4
+    window_size = len(ir_data) // 4
+    
+    # Ensure we don't go out of bounds
+    analysis_start = max(0, analysis_start)
+    window_size = min(window_size, len(ir_data) - analysis_start)
+    
+    # Step 4: Calculate power in each region
+    
+    # SIGNAL REGION: After the peak (direct sound)
+    signal_start = analysis_start
+    signal_end = min(signal_start + window_size, len(ir_data))
+    signal_power = np.sum(ir_data[signal_start:signal_end] ** 2)
+    peak_signal_power = np.max(ir_data[signal_start:signal_end] ** 2)
+    
+    # DISTORTION REGION: Before the peak (early reflections)
+    dist_start = max(0, analysis_start - window_size)
+    dist_end = analysis_start
+    if dist_end > dist_start:
+        dist_power = np.max(ir_data[dist_start:dist_end] ** 2)
+    else:
+        dist_power = 1e-10  # Avoid log(0)
+    
+    # NOISE REGION: Further before the peak
+    noise_start = max(0, dist_start - window_size)
+    noise_end = dist_start
+    if noise_end > noise_start:
+        noise_power = np.sum(ir_data[noise_start:noise_end] ** 2)
+    else:
+        noise_power = 1e-10  # Avoid log(0)
+    
+    # Step 5: Convert to dBFS
+    signal_dbfs = 10 * np.log10(signal_power)
+    dist_dbfs = 10 * np.log10(dist_power)
+    noise_dbfs = 10 * np.log10(noise_power)
+    
+    # Step 6: Calculate ratios (exactly like REW)
+    signal_to_noise_db = signal_dbfs - noise_dbfs
+    signal_to_dist_db = 10 * np.log10(peak_signal_power) - dist_dbfs
+    
+    return {
+        'signal_dbfs': signal_dbfs,
+        'dist_dbfs': dist_dbfs,
+        'noise_dbfs': noise_dbfs,
+        'snr_db': signal_to_noise_db,
+        'sdr_db': signal_to_dist_db,
+        'peak_idx': abs_max_idx,
+        'analysis_regions': {
+            'signal': (signal_start, signal_end),
+            'distortion': (dist_start, dist_end), 
+            'noise': (noise_start, noise_end)
+        }
+    }
+
 def fetch_align_upload_impulse_response_rew_accurate(channel_prefix):
     print(f"🔍 Fetching measurements for: {channel_prefix}_")
 
@@ -591,6 +667,8 @@ def fetch_align_upload_impulse_response_rew_accurate(channel_prefix):
     for i, (m_id, m_title) in enumerate(selected):
         print(f"Processing {m_title}:")
         ir, sample_rate, start_time, timing_ref = get_ir_for_measurement(m_id)
+        rew_metrics = calculate_rew_metrics_from_ir(ir, sample_rate)
+
         measurements_data.append((ir, sample_rate, start_time, timing_ref, m_title))
         original_irs.append(ir)
         original_start_times.append(start_time)
@@ -738,5 +816,5 @@ def find_ir_onset_rew_style(ir_data, sample_rate, harm_factor=0.0, threshold_db=
     return max_idx
 
 if __name__ == "__main__":
-    fetch_align_upload_impulse_response_rew_accurate("TRL")
+    fetch_align_upload_impulse_response_rew_accurate("C")
     fetch_align_upload_frequency_responses_rew_accurate("TRL")
