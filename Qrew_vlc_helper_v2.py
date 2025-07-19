@@ -67,7 +67,7 @@ class VLCPlayer:
         def _on_end(ev):
             done_q.put(True)
 
-        evmgr = player.event_manager()
+        evmgr = self._player.event_manager()
         evmgr.event_attach(vlc.EventType.MediaPlayerEndReached, _on_end)
         self._player.play()
         self._playing = True

@@ -376,8 +376,8 @@ class MainWindow(QMainWindow):
         self.metrics_detail_label.setTextFormat(Qt.RichText)
         self.metrics_detail_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.metrics_detail_label.setWordWrap(True)
-        self.metrics_detail_label.setMinimumSize(180, 100)
-        self.metrics_detail_label.setMaximumHeight(140)
+        self.metrics_detail_label.setMinimumSize(180, 140)
+        self.metrics_detail_label.setMaximumHeight(150)
         self.metrics_detail_label.hide()  # Initially hidden
 
         metrics_layout.addWidget(self.metrics_label)
@@ -921,15 +921,15 @@ class MainWindow(QMainWindow):
                 # IR peak_to_noise
                 ir_peak_noise = detail.get("ir_pk_noise_dB")
                 if ir_peak_noise is not None:
-                    detail_lines.append(f"<span style='color:#99ccff;'>SNR:</span> {ir_peak_noise:.1f} dB")
+                    detail_lines.append(f"<span style='color:#99ccff;'>IR Peak-to-Noise:</span> {ir_peak_noise:.1f} dB")
 
                 # SNR
-                snr = detail.get("rew_snr_dB")
+                snr = detail.get("snr_dB")
                 if snr is not None:
                     detail_lines.append(f"<span style='color:#99ccff;'>SNR:</span> {snr:.1f} dB")
 
                 # Signal to Distortion Ratio 
-                sdr = detail.get("rew_sdr_dB")
+                sdr = detail.get("sdr_dB")
                 if sdr is not None:
                     detail_lines.append(f"<span style='color:#99ccff;'>SDR:</span> {sdr:.1f} dB")
                 

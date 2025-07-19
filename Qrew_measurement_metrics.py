@@ -322,10 +322,10 @@ def combine_and_score_metrics(rew_metrics, freq_metrics):
     score = 0.0
 
     # 1 · Signal-to-Noise Ratio  (40-80 dB → 0-20 pts)
-    score += _scale(snr_dB, 40, 80, 20)
+    score += _scale(snr_dB, 20, 75, 20)
 
     # 2 · Signal-to-Distortion-Ratio (SDR)  (35-55 dB → 0-15 pts)
-    score += _scale(sdr_dB, 35, 55, 15)
+    score += _scale(sdr_dB, 20, 55, 15)
 
     # 3 · Mean broadband THD  (2 %→0 pts … 0.0 %→15 pts)
     score += _scale(mean_thd, 2.0, 0.0, 15, inverse=True)
