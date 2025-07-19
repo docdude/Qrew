@@ -80,7 +80,7 @@ BUTTON_STYLES = {
             background-color: #4CAF50;
             color: white;
             border: 1px solid #45a049;
-            padding: 8px;
+            padding: 6px 8px;
             font-size: 14px;
             font-weight: bold;
             border-radius: 4px;
@@ -89,12 +89,47 @@ BUTTON_STYLES = {
             background-color: #45a049;
         }
     ''',
-    
+    'primary_default': '''
+                QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: 1px solid #45a049;
+                padding: 6px 8px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:default {
+                border: 2px solid #2e7d32;
+            }
+    ''',
+    'primary_disabled': '''
+                QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: 1px solid #45a049;
+                padding: 6px 8px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+                border: 1px solid #999;
+            }
+    ''',
     'secondary': '''
         QPushButton {
             background-color: #7a7a7a;
             border: 1px solid #ccc;
-            padding: 8px;
+            padding: 6px 8px;
             font-size: 14px;
             border-radius: 4px;
         }
@@ -105,11 +140,11 @@ BUTTON_STYLES = {
     
     'danger': '''
         QPushButton {
-            background-color: #f44336;
+            background-color: rgba(244, 67, 54, 0.8); 
             color: white;
             border: 1px solid #d32f2f;
-            padding: 8px;
-            font-size: 14px;
+            padding: 6px 8px;
+            font-size: 12px;
             font-weight: bold;
             border-radius: 4px;
         }
@@ -123,8 +158,8 @@ BUTTON_STYLES = {
             background-color: #ff9800;
             color: white;
             border: 1px solid #f57c00;
-            padding: 8px;
-            font-size: 14px;
+            padding: 6px 8px;
+            font-size: 12px;
             font-weight: bold;
             border-radius: 4px;
         }
@@ -138,7 +173,7 @@ BUTTON_STYLES = {
             background-color: #2196F3;
             color: white;
             border: 1px solid #1976D2;
-            padding: 8px;
+            padding: 6px 8px;
             font-size: 14px;
             border-radius: 4px;
         }
@@ -149,15 +184,28 @@ BUTTON_STYLES = {
     
     'transparent': '''
         QPushButton { 
-            background: rgba(51, 51, 51, 0.5); 
+            background-color: rgba(51, 51, 51, 0.8); 
             color: white; 
             border: 1px solid #666;
             border-radius: 4px;
             padding: 6px 8px;
             font-size: 12px;
+            font-weight: normal;
+        }
+    ''',
+    'transparent_small': '''
+        QPushButton { 
+            background-color: rgba(51, 51, 51, 0.8); 
+            color: white; 
+            border: 1px solid #666;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: normal;
         }
     '''
 }
+
 
 CHECKBOX_STYLE = '''
     QCheckBox {
@@ -180,16 +228,48 @@ CHECKBOX_STYLE = '''
 
 GROUPBOX_STYLE = '''
     QGroupBox {
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
         font-weight: bold;
-        font-size: 14px;
-        border: 2px solid #ccc;
+        font-size: 12px;
+        border: 2px solid #999;
         border-radius: 5px;
-        margin-top: 10px;
-        padding-top: 0px;
+        margin-top: 5px;          /* space above frame */
+        padding-top: 0px;         /* space below title */
     }
     QGroupBox::title {
         subcontrol-origin: margin;
         left: 10px;
-        padding: 0 5px 0 5px;
+        padding: 0px 5px 0px 5px;
     }
 '''
+
+COMBOBOX_STYLE = """
+    QComboBox {
+        border: 2px solid gray;
+        border-radius: 4px;
+        padding: 1px 22px 1px 6px;    
+        selection-background-color: #263238;
+        selection-color: lightgreen;
+        color: white;
+        background: rgba(69, 90, 100, 0.80);   /* 50 % opacity black */
+        color: white;
+        font-size: 14px;
+    }
+                        
+    QComboBox QListView {
+        background-color: #455A64;
+    }
+
+"""
+
+TOOLTIP_STYLE = """
+        QToolTip {
+            color: white;
+            background-color: #353535;
+            border: 1px solid gray;
+            border-radius: 2px;
+            padding: 2px;
+            opacity: 230;
+        }
+"""

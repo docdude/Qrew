@@ -313,7 +313,7 @@ class QrewFileDialog(QDialog):
             
             info_text = (
                 f"Size: {size_str}<br>"
-                f"Modified: {os.path.getctime(file_path)}"
+                f"Modified: {modified}"
             )
             self.info_label.setText(info_text)
             self.ok_button.setEnabled(True)

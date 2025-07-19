@@ -1,28 +1,13 @@
 # Qrew.py
-
-from cProfile import label
+#from cProfile import label
 import os
 import re
 import sys
 import time
 
-# --- crash diagnostics -------------------------------------------------
-import faulthandler, sys, os
-_CRASHLOG = os.path.join(os.path.dirname(__file__), "crash_trace.log")
-# append mode so multiple runs accumulate
-_fh = open(_CRASHLOG, "a", buffering=1)
-faulthandler.enable(file=_fh, all_threads=True)
-# optional: manual dump on SIGUSR1 (Linux/macOS)
-try:
-    import signal
-    faulthandler.register(signal.SIGUSR1, file=_fh, all_threads=True)
-except Exception:
-    pass
-# ----------------------------------------------------------------------
-
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
                             QCheckBox, QGridLayout,
-                            QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog,
+                            QVBoxLayout, QHBoxLayout, QFileDialog,
                             QDialog, QSizePolicy, QComboBox, QScrollArea, QGroupBox, QFrame, QToolButton, QToolTip)
 
 
@@ -42,11 +27,11 @@ from Qrew_measurement_metrics import evaluate_measurement, calculate_rew_metrics
 from Qrew_message_handlers import rta_coordinator
 
 from Qrew_workers_v2 import MeasurementWorker, ProcessingWorker
-from Qrew_styles import tint, HTML_ICONS, set_background_image
+from Qrew_styles import COMBOBOX_STYLE, BUTTON_STYLES, GROUPBOX_STYLE, TOOLTIP_STYLE, tint, HTML_ICONS, set_background_image
 from Qrew_button import Button
-from Qrew_gridwidget import GridWidget
-from Qrew_messagebox import QrewMessageBox, QrewFileDialog
-from Qrew_filedialog import get_open_file
+
+from Qrew_messagebox import QrewMessageBox
+
 from Qrew_message_handlers import run_flask_server, message_bridge
 
 from Qrew_dialogs import (SettingsDialog, PositionDialog, MeasurementQualityDialog, ClearMeasurementsDialog, SaveMeasurementsDialog,
@@ -54,13 +39,29 @@ from Qrew_dialogs import (SettingsDialog, PositionDialog, MeasurementQualityDial
 
 from Qrew_micwidget_icons import MicPositionWidget, SofaWidget
 from Qrew_vlc_helper_v2 import stop_vlc_and_exit
-import Qrew_resources
+#import Qrew_resources
+
+import faulthandler
+import signal
+
+# --- crash diagnostics -------------------------------------------------
+_CRASHLOG = os.path.join(os.path.dirname(__file__), "crash_trace.log")
+# append mode so multiple runs accumulate
+_fh = open(_CRASHLOG, "a", buffering=1)
+faulthandler.enable(file=_fh, all_threads=True)
+# optional: manual dump on SIGUSR1 (Linux/macOS)
+try:
+    faulthandler.register(signal.SIGUSR1, file=_fh, all_threads=True)
+except Exception:
+    pass
+# ----------------------------------------------------------------------
 
 
 # Force Windows to use IPv4 for all requests
 if platform.system() == "Windows":
     import socket
-    import requests.packages.urllib3.util.connection as urllib3_cn
+   # import requests.packages.urllib3.util.connection as urllib3_cn  # this is for older versions
+    import urllib3.util.connection as urllib3_cn
 
     def allowed_gai_family():
         return socket.AF_INET  # Force IPv4 only
@@ -73,7 +74,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.qsettings = QSettings("Docdude", "Qrew")
         self.setWindowTitle("Qrew")
-        self.resize(640, 880)
+        self.resize(680, 900)
         self.setMinimumSize(600, 860)
         self.bg_source = QPixmap(":/banner_500x680.png")   # original file
         self.bg_opacity = 0.35                           # user-chosen α
@@ -157,16 +158,7 @@ class MainWindow(QMainWindow):
         # Clear button
         self.clear_button = Button("Clear")
         self.clear_button.clicked.connect(self.clear_selections)
-        self.clear_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 2px 8px;
-                font-size: 10px;
-            }
-        """)
+        self.clear_button.setStyleSheet(BUTTON_STYLES['transparent_small'])
 
         self.clear_button.setMinimumHeight(20)
         self.clear_button.setMinimumWidth(50)
@@ -316,23 +308,7 @@ class MainWindow(QMainWindow):
         self.pos_selector.setCurrentText("12")
         self.pos_selector.setMaximumWidth(70)
 
-        self.pos_selector.setStyleSheet("""
-        /* ========== CLOSED COMBO ========== */
-        QComboBox {
-            border: 2px solid gray;
-            border-radius: 4px;
-            padding: 1px 22px 1px 6px;     /* leave space for arrow */
-            background: rgba(0, 0, 0, 0.80);   /* 50 % opacity black */
-            color: white;                       /* visible text      */
-            font-size: 14px;
-            font: 'arial'; /* font family       */
-        }
-        QComboBox QAbstractItemView {
-            color: white; /* Color of the dropdown list items' text */
-        }
-
-
-        """)
+        self.pos_selector.setStyleSheet(COMBOBOX_STYLE)
 
 
         pos_layout.addWidget(self.pos_selector)
@@ -341,7 +317,7 @@ class MainWindow(QMainWindow):
         metrics_container = QWidget()
         metrics_container.setStyleSheet("background: transparent;")
         metrics_layout = QVBoxLayout(metrics_container)
-        metrics_layout.setContentsMargins(10, 50, 20, 0)
+        metrics_layout.setContentsMargins(0, 50, 0, 0)
         metrics_layout.setSpacing(5)
         # Metrics label
         self.metrics_label = QLabel("")
@@ -359,7 +335,7 @@ class MainWindow(QMainWindow):
         self.metrics_label.setTextFormat(Qt.RichText)
         self.metrics_label.setAlignment(Qt.AlignCenter)
         self.metrics_label.setMinimumSize(195, 40)
-        self.metrics_label.hide()
+        self.metrics_label.setVisible(False)
         # Detail metrics label (expandable)
         self.metrics_detail_label = QLabel("")
         self.metrics_detail_label.setStyleSheet("""
@@ -378,7 +354,7 @@ class MainWindow(QMainWindow):
         self.metrics_detail_label.setWordWrap(True)
         self.metrics_detail_label.setMinimumSize(195, 140)
         self.metrics_detail_label.setMaximumHeight(150)
-        self.metrics_detail_label.hide()  # Initially hidden
+        self.metrics_detail_label.setVisible(False)  # Initially hidden
 
         metrics_layout.addWidget(self.metrics_label)
         metrics_layout.addWidget(self.metrics_detail_label)
@@ -412,7 +388,7 @@ class MainWindow(QMainWindow):
         row_widget   = QWidget()
         row_layout   = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(10, 0, 0, 0)
-        row_layout.setSpacing(20)
+        row_layout.setSpacing(10)
 
         # left column  (positions + metrics)
         left_col     = QWidget()
@@ -448,63 +424,26 @@ class MainWindow(QMainWindow):
         # Load stimulus button
         self.load_button = Button("Load Stimulus File")
         self.load_button.clicked.connect(self.load_stimulus_file)
-        self.load_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 8px;
-                font-size: 12px;
-            }
-        """)
+        self.load_button.setStyleSheet(BUTTON_STYLES['transparent'])
         self.load_button.setMaximumHeight(120)
         meas_layout.addWidget(self.load_button)
 
         # Start button
         self.start_button = Button("Start Measurement")
         self.start_button.clicked.connect(self.on_start)
-        self.start_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 8px;
-                font-size: 12px;
-            }
-        """)
+        self.start_button.setStyleSheet(BUTTON_STYLES['transparent'])
         meas_layout.addWidget(self.start_button)
 
         # Repeat button
         self.repeat_button = Button("Repeat Measurement")
         self.repeat_button.setDisabled(True)
         self.repeat_button.clicked.connect(self.show_repeat_measurement_dialog)
-        self.repeat_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 8px;
-                font-size: 12px;
-            }
-        """)
+        self.repeat_button.setStyleSheet(BUTTON_STYLES['transparent'])
         meas_layout.addWidget(self.repeat_button)
 
         # Cancel button
         self.cancel_button = Button("Cancel Run")
-        self.cancel_button.setStyleSheet("""
-            QPushButton {
-                background: #b33; 
-                color:#fff;
-                border:1px solid #933; 
-                border-radius:4px;
-                padding:6px 8px; 
-                font-size:12px;
-            }
-            QPushButton:hover { background:#d44; }
-        """)
+        self.cancel_button.setStyleSheet(BUTTON_STYLES['danger'])
         self.cancel_button.clicked.connect(self._abort_current_run)
         #self.cancel_button.setVisible(False)          # only when running
         meas_layout.addWidget(self.cancel_button)
@@ -522,72 +461,29 @@ class MainWindow(QMainWindow):
         # Cross button
         self.cross_button = Button("Cross Corr Align")
         self.cross_button.clicked.connect(self.on_cross_corr_align)
-        self.cross_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 8px;
-                font-size: 12px;
-            }
-        """)
+        self.cross_button.setStyleSheet(BUTTON_STYLES['transparent'])
         cmd_layout.addWidget(self.cross_button)
 
         # Vector button
         self.vector_button = Button("Vector Average")
         self.vector_button.clicked.connect(self.on_vector_average)
-        self.vector_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 8px;
-                font-size: 12px;
-            }
-        """)
+        self.vector_button.setStyleSheet(BUTTON_STYLES['transparent'])
         cmd_layout.addWidget(self.vector_button)
 
         # Full processing button
         self.full_button = Button("Cross+Vector")
         self.full_button.clicked.connect(self.on_full_processing)
-        self.full_button.setStyleSheet("""
-            QPushButton { 
-                background: rgba(51, 51, 51, 0.5); 
-                color: white; 
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 8px;
-                font-size: 12px;
-            }
-        """)
+        self.full_button.setStyleSheet(BUTTON_STYLES['transparent'])
         cmd_layout.addWidget(self.full_button)
 
         main_layout.addWidget(cmd_container, alignment=Qt.AlignCenter)
         main_layout.addSpacing(0)
 
         status_group = QGroupBox("Measurement Status")
-        status_group.setStyleSheet('''
-            QGroupBox {
-                background: rgba(0, 0, 0, 0.8); 
-                color: #fff; 
-                font-weight: bold;
-                font-size: 12px;
-                border: 2px solid #999;
-                border-radius: 5px;
-                margin-top: 5px;
-                padding-top: 5px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-        ''')
+        status_group.setStyleSheet(GROUPBOX_STYLE)
        # status_group.setMinimumHeight(80)
         #status_group.setMaximumHeight(80)
-        status_group.setMinimumSize(450, 80)
+        status_group.setMinimumSize(450, 90)
       #  status_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         # Status layout
@@ -613,23 +509,7 @@ class MainWindow(QMainWindow):
 
         # Warning/Error panel
         error_group = QGroupBox("Warnings & Errors")
-        error_group.setStyleSheet('''
-            QGroupBox {
-                background: rgba(0, 0, 0, 0.8);
-                color: #fff;
-                font-weight: bold;
-                font-size: 12px;
-                border: 2px solid #999;
-                border-radius: 5px;
-                margin-top: 5px;          /* space above frame */
-                padding-top: 0px;         /* space below title */
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        ''')
+        error_group.setStyleSheet(GROUPBOX_STYLE)
        # error_group.setMinimumHeight(110)
      #   error_group.setMaximumHeight(110)
       #  error_group.setMinimumWidth(450)
@@ -648,16 +528,7 @@ class MainWindow(QMainWindow):
         self.clear_errors_button.clicked.connect(self.clear_warnings_errors)
       #  self.clear_errors_button.setFixedHeight(20)
        # self.clear_errors_button.setFixedWidth(50)
-        self.clear_errors_button.setStyleSheet("""
-            QPushButton {
-                background: rgba(51, 51, 51, 0.5);
-                color: white;
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 2px 8px;
-                font-size: 10px;
-            }
-        """)
+        self.clear_errors_button.setStyleSheet(BUTTON_STYLES['transparent_small'])
 
         self.clear_errors_button.setToolTip("Clear all warnings and errors")
         header_hbox.addWidget(self.clear_errors_button)
@@ -840,7 +711,7 @@ class MainWindow(QMainWindow):
     def _set_channel_header(self, cfg_name: str):
         """Update the header to show current speaker configuration."""
         if not cfg_name or cfg_name.startswith("Manual"):
-            suffix = f" (Manual Select)"
+            suffix = " (Manual Select)"
         else:
             suffix = f" ({cfg_name})"
         self.channel_label.setText(f"Select Speaker Channels{suffix}:")
@@ -1048,7 +919,7 @@ class MainWindow(QMainWindow):
         for warning in self.current_warnings:
             display_parts.append(f'<span style="color: #ffd93d;">{HTML_ICONS["warning"]} {warning}</span>')
         
-        display_text = f'<br>'.join(display_parts)
+        display_text = '<br>'.join(display_parts)
         self.error_label.setTextFormat(Qt.RichText)
         self.error_label.setText(display_text)
         self.error_label.setStyleSheet("""
@@ -1100,7 +971,7 @@ class MainWindow(QMainWindow):
     def clear_selections(self):
         for checkbox in self.channel_checkboxes.values():
             checkbox.setChecked(False)
-        self.channel_label.setText(f"Select Speaker Channels (Manual Select):")
+        self.channel_label.setText("Select Speaker Channels (Manual Select):")
         #self.app_settings['speaker_config'] = 'Manual Select'
         #SettingsDialog.save(self.app_settings)
         qs.set('speaker_config', 'Manual Select')
@@ -2054,6 +1925,7 @@ if __name__ == "__main__":
             font-family: "Monaco";
         }
     """)
+    app.setStyleSheet(TOOLTIP_STYLE)
     # Check REW connection
     wait_for_rew_qt()
     

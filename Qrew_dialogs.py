@@ -3,19 +3,19 @@
 import os
 import datetime
 from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QCheckBox, QGridLayout,
-                            QVBoxLayout, QHBoxLayout, QMessageBox, QFileDialog, QApplication,
+                            QVBoxLayout, QHBoxLayout, QApplication,
                             QDialog, QSizePolicy, QScrollArea, QGroupBox, QFrame, QComboBox)
 
 
-from PyQt5.QtCore import Qt, QSize, QRect, QPoint
+from PyQt5.QtCore import Qt, QRect, QPoint
 from PyQt5.QtGui import QPixmap
 from Qrew_button import Button
-from Qrew_styles import HTML_ICONS, set_background_image
+from Qrew_styles import BUTTON_STYLES, HTML_ICONS, set_background_image, COMBOBOX_STYLE
 from Qrew_common import SPEAKER_LABELS, SPEAKER_CONFIGS
 from Qrew_messagebox import QrewMessageBox, QrewFileDialog
 import Qrew_settings as qs
 from Qrew_micwidget_icons import MicPositionWidget
-import Qrew_resources
+#import Qrew_resources
 
 # expose speaker configs for MainWindow
 def get_speaker_configs():   
@@ -111,20 +111,7 @@ class PositionDialog(QDialog):
         btn = Button("OK")
         btn.setMinimumWidth(200)
         btn.clicked.connect(self.accept)
-        btn.setStyleSheet('''
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: 1px solid #45a049;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        ''')
+        btn.setStyleSheet(BUTTON_STYLES['primary'])
 
         hbox = QHBoxLayout()
         hbox.addStretch()
@@ -201,52 +188,15 @@ class MeasurementQualityDialog(QDialog):
         
         self.remeasure_button = Button('Remeasure')
         self.remeasure_button.clicked.connect(lambda: self.done(1))  # Return 1 for remeasure
-        self.remeasure_button.setStyleSheet('''
-            QPushButton {
-                background-color: #ff9800;
-                color: white;
-                border: 1px solid #f57c00;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #f57c00;
-            }
-        ''')
+        self.remeasure_button.setStyleSheet(BUTTON_STYLES['warning'])
         
         self.continue_button = Button('Continue')
         self.continue_button.clicked.connect(lambda: self.done(2))  # Return 2 for continue
-        self.continue_button.setStyleSheet('''
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: 1px solid #45a049;
-                padding: 8px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        ''')
+        self.continue_button.setStyleSheet(BUTTON_STYLES['primary'])
         
         self.stop_button = Button('Stop')
         self.stop_button.clicked.connect(lambda: self.done(0))  # Return 0 for stop
-        self.stop_button.setStyleSheet('''
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                border: 1px solid #d32f2f;
-                padding: 8px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #d32f2f;
-            }
-        ''')
+        self.stop_button.setStyleSheet(BUTTON_STYLES['danger'])
         
         button_layout.addWidget(self.stop_button)
         button_layout.addSpacing(10)
@@ -303,18 +253,7 @@ class SaveMeasurementsDialog(QDialog):
         self.browse_button.clicked.connect(self.browse_directory)
      #   self.browse_button.setFixedWidth(100)
       #  self.browse_button.setMinimumHeight(30)
-        self.browse_button.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 5px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-        ''')
+        self.browse_button.setStyleSheet(BUTTON_STYLES['secondary'])
         directory_layout.addWidget(directory_label)
         directory_layout.addWidget(self.directory_input)
         directory_layout.addWidget(self.browse_button)
@@ -339,40 +278,13 @@ class SaveMeasurementsDialog(QDialog):
         self.cancel_button = Button('Cancel')
         self.cancel_button.clicked.connect(self.reject)
       #  self.cancel_button.setFixedSize(100, 35)
-        self.cancel_button.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 8px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        self.cancel_button.setStyleSheet(BUTTON_STYLES['secondary'])
         
         self.save_button = Button('Save')
         self.save_button.clicked.connect(self.save_measurements)
      #  self.save_button.setFixedSize(100, 35)
         self.save_button.setDefault(True)
-        self.save_button.setStyleSheet('''
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: 1px solid #45a049;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:default {
-                border: 2px solid #2e7d32;
-            }
-        ''')
+        self.save_button.setStyleSheet(BUTTON_STYLES['primary_default'])
         
         button_layout.addWidget(self.cancel_button)
       #  button_layout.addSpacing(10)
@@ -481,54 +393,18 @@ class ClearMeasurementsDialog(QDialog):
         self.cancel_button = Button('Cancel')
         self.cancel_button.clicked.connect(self.reject)
       #  self.cancel_button.setFixedSize(100, 35)
-        self.cancel_button.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 8px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        self.cancel_button.setStyleSheet(BUTTON_STYLES['secondary'])
         
         if measurement_count > 0:
             self.proceed_button = Button('Keep & Proceed')
             self.proceed_button.clicked.connect(self.keep_and_proceed)
        #     self.proceed_button.setFixedSize(120, 35)
-            self.proceed_button.setStyleSheet('''
-                QPushButton {
-                    background-color: #2196F3;
-                    color: white;
-                    border: 1px solid #1976D2;
-                    padding: 8px;
-                    font-size: 14px;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #1976D2;
-                }
-            ''')
+            self.proceed_button.setStyleSheet(BUTTON_STYLES['info'])
             
             self.delete_button = Button('Delete All')
             self.delete_button.clicked.connect(self.delete_and_proceed)
           #  self.delete_button.setFixedSize(100, 35)
-            self.delete_button.setStyleSheet('''
-                QPushButton {
-                    background-color: #f44336;
-                    color: white;
-                    border: 1px solid #d32f2f;
-                    padding: 8px;
-                    font-size: 14px;
-                    font-weight: bold;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #d32f2f;
-                }
-            ''')
+            self.delete_button.setStyleSheet(BUTTON_STYLES['danger'])
             
             button_layout.addWidget(self.cancel_button)
             button_layout.addSpacing(10)
@@ -540,20 +416,7 @@ class ClearMeasurementsDialog(QDialog):
             self.proceed_button.clicked.connect(self.keep_and_proceed)
        #     self.proceed_button.setFixedSize(100, 35)
             self.proceed_button.setDefault(True)
-            self.proceed_button.setStyleSheet('''
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: 1px solid #45a049;
-                    padding: 8px;
-                    font-size: 14px;
-                    font-weight: bold;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            ''')
+            self.proceed_button.setStyleSheet(BUTTON_STYLES['primary'])
             
             button_layout.addWidget(self.cancel_button)
             button_layout.addSpacing(10)
@@ -779,32 +642,10 @@ class RepeatMeasurementDialog(QDialog):
         # Add select all/none buttons
         button_layout = QVBoxLayout()
         select_all_btn = Button("Select All Channels")
-        select_all_btn.setStyleSheet('''
-            QPushButton {
-                background-color: #007AFF;
-                border: 1px solid #45a049;
-                padding: 6px;
-                font-size: 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        select_all_btn.setStyleSheet(BUTTON_STYLES['info'])
         select_all_btn.clicked.connect(self.select_all_channels)
         select_none_btn = Button("Select None")
-        select_none_btn.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 6px;
-                font-size: 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        select_none_btn.setStyleSheet(BUTTON_STYLES['secondary'])
         select_none_btn.clicked.connect(self.select_no_channels)
         
         button_layout.addWidget(select_all_btn)
@@ -875,32 +716,10 @@ class RepeatMeasurementDialog(QDialog):
         # Add select all/none buttons for positions
         pos_button_layout = QVBoxLayout()
         select_all_pos_btn = Button("Select All Positions")
-        select_all_pos_btn.setStyleSheet('''
-            QPushButton {
-                background-color: #007AFF;
-                border: 1px solid #45a049;
-                padding: 6px;
-                font-size: 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        select_all_pos_btn.setStyleSheet(BUTTON_STYLES['info'])
         select_all_pos_btn.clicked.connect(self.select_all_positions)
         select_none_pos_btn = Button("Select None")
-        select_none_pos_btn.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 6px;
-                font-size: 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        select_none_pos_btn.setStyleSheet(BUTTON_STYLES['secondary'])
         select_none_pos_btn.clicked.connect(self.select_no_positions)
         
         pos_button_layout.addWidget(select_all_pos_btn)
@@ -968,42 +787,13 @@ class RepeatMeasurementDialog(QDialog):
         self.cancel_button = Button('Cancel')
         self.cancel_button.clicked.connect(self.reject)
    #     self.cancel_button.setFixedSize(100, 35)
-        self.cancel_button.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 8px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        self.cancel_button.setStyleSheet(BUTTON_STYLES['secondary'])
         
         self.proceed_button = Button('Remeasure Selected')
         self.proceed_button.clicked.connect(self.proceed_with_remeasurement)
     #    self.proceed_button.setFixedSize(150, 35)
         self.proceed_button.setEnabled(False)
-        self.proceed_button.setStyleSheet('''
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: 1px solid #45a049;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #ccc;
-                color: #666;
-                border: 1px solid #999;
-            }
-        ''')
+        self.proceed_button.setStyleSheet(BUTTON_STYLES['primary_disabled'])
         
         button_layout.addWidget(self.cancel_button)
         button_layout.addSpacing(10)
@@ -1076,10 +866,11 @@ class RepeatMeasurementDialog(QDialog):
             self.selection_label.setWordWrap(True)
             self.selection_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.selection_label.setTextFormat(Qt.RichText)
-            self.selection_label.setStyleSheet('color: #fff; padding: 0px;')
+            self.selection_label.setStyleSheet('padding: 0px;')
             # Update button text to show channel info
-            channel_names = sorted(set(m['channel'] for m in self.selected_measurements))
-            button_text = f'Remeasure Selected ({", ".join(channel_names)})'
+          #  channel_names = sorted(set(m['channel'] for m in self.selected_measurements))
+            #button_text = f'Remeasure Selected ({", ".join(channel_names)})'
+            button_text = "Remeasure Selected"
             self.proceed_button.setText(button_text)
 
             self.proceed_button.setEnabled(True)
@@ -1161,36 +952,12 @@ class DeleteSelectedMeasurementsDialog(QDialog):
         self.cancel_button = Button('Cancel')
         self.cancel_button.clicked.connect(self.reject)
     #    self.cancel_button.setFixedSize(100, 35)
-        self.cancel_button.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 8px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        self.cancel_button.setStyleSheet(BUTTON_STYLES['secondary'])
         
         self.delete_button = Button('Delete & Remeasure')
         self.delete_button.clicked.connect(self.accept)
      #   self.delete_button.setFixedSize(150, 35)
-        self.delete_button.setStyleSheet('''
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                border: 1px solid #d32f2f;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #d32f2f;
-            }
-        ''')
+        self.delete_button.setStyleSheet(BUTTON_STYLES['danger'])
         
         button_layout.addWidget(self.cancel_button)
         button_layout.addSpacing(10)
@@ -1261,13 +1028,7 @@ class SettingsDialog(QDialog):
         self.cfg_combo.addItems(SPEAKER_CONFIGS.keys())
         self.cfg_combo.setCurrentText(
             current_values.get("speaker_config", "Manual Select"))
-        self.cfg_combo.setStyleSheet("""
-            QComboBox {
-                border: 2px solid gray; border-radius: 4px;
-                padding: 1px 22px 1px 6px;
-                background: rgba(0,0,0,0.80); color: white; font-size: 14px;
-            }
-        """)
+        self.cfg_combo.setStyleSheet(COMBOBOX_STYLE)
         self.cfg_combo.currentTextChanged.connect(self.preview_preset)
 
 
@@ -1285,16 +1046,7 @@ class SettingsDialog(QDialog):
         self.backend_combo = QComboBox()
         self.backend_combo.addItems(["auto", "libvlc", "subprocess"])
         self.backend_combo.setCurrentText(current_values.get("vlc_backend", "auto"))
-        self.backend_combo.setStyleSheet("""
-            QComboBox {
-                border: 2px solid gray;
-                border-radius: 4px;
-                padding: 1px 22px 1px 6px;     /* leave space for arrow */
-                background: rgba(0, 0, 0, 0.80);   /* 50 % opacity black */
-                color: white;                       /* visible text      */
-                font-size: 14px;
-            }
-        """)
+        self.backend_combo.setStyleSheet(COMBOBOX_STYLE)
     
         backend_layout.addWidget(backend_label)
         backend_layout.addWidget(self.backend_combo)
@@ -1313,16 +1065,7 @@ class SettingsDialog(QDialog):
         self.viz_mode_combo.addItems(["Sofa View", "Compact Theater View", "Full Theater View"])
         self.viz_mode_combo.setCurrentText(current_values.get("viz_view", "Sofa View"))
         self.viz_mode_combo.setMaximumWidth(150)
-        self.viz_mode_combo.setStyleSheet("""
-            QComboBox {
-                border: 2px solid gray;
-                border-radius: 4px;
-                padding: 1px 22px 1px 6px;
-                background: rgba(0, 0, 0, 0.80);
-                color: white;
-                font-size: 14px;
-            }
-        """)
+        self.viz_mode_combo.setStyleSheet(COMBOBOX_STYLE)
         viz_layout.addWidget(viz_label)
         viz_layout.addWidget(self.viz_mode_combo)
         
@@ -1337,35 +1080,11 @@ class SettingsDialog(QDialog):
         
         cancel_btn = Button("Cancel")
         cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setStyleSheet('''
-            QPushButton {
-                background-color: #7a7a7a;
-                border: 1px solid #ccc;
-                padding: 6px;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e5e5e5;
-            }
-        ''')
+        cancel_btn.setStyleSheet(BUTTON_STYLES['secondary'])
         
         ok_btn = Button("OK")
         ok_btn.clicked.connect(self.accept)
-        ok_btn.setStyleSheet('''
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: 1px solid #45a049;
-                padding: 6px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        ''')
+        ok_btn.setStyleSheet(BUTTON_STYLES['primary'])
         
         row.addWidget(cancel_btn)
         row.addSpacing(10)
@@ -1454,41 +1173,12 @@ class REWConnectionDialog(QDialog):
         
         self.exit_button = Button('Exit Application')
         self.exit_button.clicked.connect(lambda: self.done(0))  # Return 0 for exit
-        self.exit_button.setStyleSheet('''
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                border: 1px solid #d32f2f;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #d32f2f;
-            }
-        ''')
+        self.exit_button.setStyleSheet(BUTTON_STYLES['danger'])
         
         self.retry_button = Button('Retry Connection')
         self.retry_button.clicked.connect(lambda: self.done(1))  # Return 1 for retry
         self.retry_button.setDefault(True)
-        self.retry_button.setStyleSheet('''
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: 1px solid #45a049;
-                padding: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:default {
-                border: 2px solid #2e7d32;
-            }
-        ''')
+        self.retry_button.setStyleSheet(BUTTON_STYLES['primary_default'])
         
         button_layout.addWidget(self.exit_button)
         button_layout.addSpacing(10)
