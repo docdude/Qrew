@@ -1341,7 +1341,7 @@ class SettingsDialog(QDialog):
             QPushButton {
                 background-color: #7a7a7a;
                 border: 1px solid #ccc;
-                padding: 8px;
+                padding: 6px;
                 font-size: 14px;
                 border-radius: 4px;
             }
@@ -1357,7 +1357,7 @@ class SettingsDialog(QDialog):
                 background-color: #4CAF50;
                 color: white;
                 border: 1px solid #45a049;
-                padding: 8px;
+                padding: 6px;
                 font-size: 14px;
                 font-weight: bold;
                 border-radius: 4px;

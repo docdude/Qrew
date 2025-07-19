@@ -341,7 +341,7 @@ class MainWindow(QMainWindow):
         metrics_container = QWidget()
         metrics_container.setStyleSheet("background: transparent;")
         metrics_layout = QVBoxLayout(metrics_container)
-        metrics_layout.setContentsMargins(20, 50, 20, 0)
+        metrics_layout.setContentsMargins(10, 50, 20, 0)
         metrics_layout.setSpacing(5)
         # Metrics label
         self.metrics_label = QLabel("")
@@ -358,7 +358,7 @@ class MainWindow(QMainWindow):
         """)
         self.metrics_label.setTextFormat(Qt.RichText)
         self.metrics_label.setAlignment(Qt.AlignCenter)
-        self.metrics_label.setMinimumSize(180, 40)
+        self.metrics_label.setMinimumSize(195, 40)
         self.metrics_label.hide()
         # Detail metrics label (expandable)
         self.metrics_detail_label = QLabel("")
@@ -376,7 +376,7 @@ class MainWindow(QMainWindow):
         self.metrics_detail_label.setTextFormat(Qt.RichText)
         self.metrics_detail_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.metrics_detail_label.setWordWrap(True)
-        self.metrics_detail_label.setMinimumSize(180, 140)
+        self.metrics_detail_label.setMinimumSize(195, 140)
         self.metrics_detail_label.setMaximumHeight(150)
         self.metrics_detail_label.hide()  # Initially hidden
 
@@ -908,6 +908,16 @@ class MainWindow(QMainWindow):
             if detail:
                 detail_lines = []
 
+                # SNR
+                snr = detail.get("snr_dB")
+                if snr is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>SNR:</span> {snr:.1f} dB")
+
+                # Signal to Distortion Ratio 
+                sdr = detail.get("sdr_dB")
+                if sdr is not None:
+                    detail_lines.append(f"<span style='color:#99ccff;'>SDR:</span> {sdr:.1f} dB")
+
                 # Peak Value
                 peak_value = detail.get("peak_value")
                 if peak_value is not None:
@@ -922,16 +932,6 @@ class MainWindow(QMainWindow):
                 ir_peak_noise = detail.get("ir_pk_noise_dB")
                 if ir_peak_noise is not None:
                     detail_lines.append(f"<span style='color:#99ccff;'>IR Peak-to-Noise:</span> {ir_peak_noise:.1f} dB")
-
-                # SNR
-                snr = detail.get("snr_dB")
-                if snr is not None:
-                    detail_lines.append(f"<span style='color:#99ccff;'>SNR:</span> {snr:.1f} dB")
-
-                # Signal to Distortion Ratio 
-                sdr = detail.get("sdr_dB")
-                if sdr is not None:
-                    detail_lines.append(f"<span style='color:#99ccff;'>SDR:</span> {sdr:.1f} dB")
                 
                 # Coherence (can be None)
                 coh_mean = detail.get("coh_mean")

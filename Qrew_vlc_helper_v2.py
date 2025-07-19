@@ -78,7 +78,7 @@ class VLCPlayer:
             self._playing = False
             if on_finished:
                 on_finished()
-            player.release()
+            self._player.release()
             self.stop_and_exit()
 
         threading.Thread(target=_watch, daemon=True).start()
@@ -88,10 +88,14 @@ class VLCPlayer:
         vlc_path = self._find_vlc_exe()
         if not vlc_path:
             raise RuntimeError("VLC executable not found")
-
-        cmd = [vlc_path, "--play-and-exit", "--auhal-volume=256", path]
-        if not show_gui:
-            cmd += ["--intf", "dummy"]
+        if self._system == "Darwin":
+            cmd = [vlc_path, "--play-and-exit", "--auhal-volume=256", path]
+            if not show_gui:
+                cmd += ["--intf", "dummy"]
+        else:
+            cmd = [vlc_path, "--play-and-exit", "--volume-step=256", path]
+            if not show_gui:
+                cmd += ["--intf", "dummy"]           
 
         # Ensure process group for better termination on Unix-like systems
         if self._system != "Windows":
@@ -250,17 +254,22 @@ def find_sweep_file(channel):
     if not Qrew_common.stimulus_dir or not os.path.isdir(Qrew_common.stimulus_dir):
         return None
     if 'SW' in channel:
-        channel = 'LE'
+        channel = 'LFE'
     # Custom pattern that treats common separators as boundaries
     # (?:^|[^A-Za-z0-9]) = start of string OR non-alphanumeric character
     # (?:[^A-Za-z0-9]|$) = non-alphanumeric character OR end of string
-    pattern = r'(?:^|[^A-Za-z0-9])' + re.escape(channel) + r'(?:[^A-Za-z0-9]|$)'
-    
+    #pattern = r'(?:^|[^A-Za-z0-9])' + re.escape(channel) + r'\.' + r'(?:[^A-Za-z0-9]|$)'
+   # pattern = r'(?:^|[^A-Za-z0-9])' + re.escape(channel) + r'\.'
+    #pattern = re.escape(channel) + r'\.'
+    pattern = re.escape(channel) + r'\.'
+
     for fname in os.listdir(Qrew_common.stimulus_dir):
         if fname.endswith('.mlp') or fname.endswith('.mp4'):
             name_without_ext = os.path.splitext(fname)[0]
             
-            if re.search(pattern, name_without_ext, re.IGNORECASE):
+          #  if re.search(pattern, name_without_ext, re.IGNORECASE):
+            if re.search(pattern, fname, re.IGNORECASE):
+
                 return os.path.join(Qrew_common.stimulus_dir, fname)
 
     return None
