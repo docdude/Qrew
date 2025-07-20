@@ -86,7 +86,7 @@ class VLCPlayer:
             self._playing = False
             if on_finished:
                 on_finished()
-            self._player.release()
+           # self._player.release()
             self.stop_and_exit()
 
         threading.Thread(target=_watch, daemon=True).start()

@@ -1,9 +1,9 @@
 {
-  "show_vlc_gui": false,
+  "show_vlc_gui": true,
   "show_tooltips": true,
   "auto_pause_on_quality_issue": false,
   "vlc_backend": "libvlc",
-  "speaker_config": "Manual Select",
+  "speaker_config": "11.1.8 Atmos",
   "save_after_repeat": true,
-  "viz_view": "Compact Theater View"
+  "viz_view": "Sofa View"
 }

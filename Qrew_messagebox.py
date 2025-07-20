@@ -46,7 +46,7 @@ class QrewMessageBox(QDialog):
         
         layout = QVBoxLayout()
         layout.setSpacing(15)
-        layout.setContentsMargins(10, 20, 20, 10)
+        layout.setContentsMargins(10, 10, 20, 20)
         
         # Icon and title layout
         self.title_layout = QHBoxLayout()
@@ -150,7 +150,7 @@ class QrewMessageBox(QDialog):
         box.setText(text)
         box._set_icon(QrewMessageBox.Information)
         box.setStandardButtons(QrewMessageBox.Ok)
-        box.setFixedSize(450, 200)
+        box.setFixedSize(450, 210)
         return box.exec_()
         
     @staticmethod
@@ -161,7 +161,7 @@ class QrewMessageBox(QDialog):
         box.setText(text)
         box._set_icon(QrewMessageBox.Warning)
         box.setStandardButtons(QrewMessageBox.Ok)
-        box.setFixedSize(450, 200)
+        box.setFixedSize(450, 210)
         return box.exec_()
         
     @staticmethod
@@ -172,7 +172,7 @@ class QrewMessageBox(QDialog):
         box.setText(text)
         box._set_icon(QrewMessageBox.Critical)
         box.setStandardButtons(QrewMessageBox.Ok)
-        box.setFixedSize(450, 200)
+        box.setFixedSize(450, 210)
         return box.exec_()
         
     @staticmethod
@@ -185,7 +185,7 @@ class QrewMessageBox(QDialog):
         box.setText(text)
         box._set_icon(QrewMessageBox.Question)
         box.setStandardButtons(buttons)
-        box.setFixedSize(450, 200)
+        box.setFixedSize(450, 210)
         return box.exec_()
 
 
