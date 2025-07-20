@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/" recursive="yes">
         <file>banner_500x680.png</file>
+        <file>Qrew_desktop_500x500.png</file>
         <file>sofa.png</file>
         <file>hometheater_base_persp.png</file>
         <file>sofa_coordinates.json</file>
