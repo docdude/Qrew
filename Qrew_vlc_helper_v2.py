@@ -1,5 +1,13 @@
 # Qrew_vlc_helper_v2.py – non-blocking VLC wrapper
-import os, platform, subprocess, threading, queue, time, shutil, re, signal
+import os
+import platform
+import subprocess
+import threading
+import queue
+import time
+import shutil
+import re
+import signal
 from pathlib import Path
 from typing import Callable, Optional
 import Qrew_common
@@ -265,7 +273,7 @@ def find_sweep_file(channel):
 
     for fname in os.listdir(Qrew_common.stimulus_dir):
         if fname.endswith('.mlp') or fname.endswith('.mp4'):
-            name_without_ext = os.path.splitext(fname)[0]
+           # name_without_ext = os.path.splitext(fname)[0]
             
           #  if re.search(pattern, name_without_ext, re.IGNORECASE):
             if re.search(pattern, fname, re.IGNORECASE):

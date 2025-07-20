@@ -3,12 +3,12 @@ import numpy as np
 import time
 from flask import Flask, request, jsonify
 from collections import deque
-from threading import Event, Thread
+from threading import Event
 from PyQt5.QtCore import QObject, pyqtSignal
 from Qrew_api_helper import get_last_error, get_last_warning
 
-from Qrew_vlc_helper_v2 import play_file, play_file_old, find_sweep_file
-import Qrew_common 
+from Qrew_vlc_helper_v2 import play_file, find_sweep_file
+
 
 status_log = deque(maxlen=100)
 
@@ -19,15 +19,15 @@ class MessageBridge(QObject):
     rta_distortion_received = pyqtSignal(dict)  # New signal for RTA data
 
     def emit_message(self, msg):
-        print(f"MessageBridge: Emitting message: {msg}")
+        print(f"MessageBridge: Emitting Message: {msg}")
         self.message_received.emit(msg)
     
     def emit_warning(self, warning):
-        print(f"MessageBridge: Emitting warning: {warning}")
+        print(f"MessageBridge: Emitting Warning: {warning}")
         self.warning_received.emit(warning)
     
     def emit_error(self, error):
-        print(f"MessageBridge: Emitting error: {error}")
+        print(f"MessageBridge: Emitting Error: {error}")
         self.error_received.emit(error)
 
 # Global bridge instance
@@ -379,7 +379,7 @@ def handle_warnings():
         status_log.appendleft(f"WARNING: {title} - {message}")
         
         # Send to Qt interface
-        message_bridge.emit_warning(f"Warning: {warning_msg}")
+        message_bridge.emit_warning(f"{warning_msg}")
         
         # Handle specific warnings that might affect measurements
         if any(keyword in title.lower() for keyword in [

@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.qsettings = QSettings("Docdude", "Qrew")
         self.setWindowTitle("Qrew")
+        self.setWindowIcon(QIcon("./Qrew_desktop_500x500.png"))
         self.resize(680, 900)
         self.setMinimumSize(600, 860)
         self.bg_source = QPixmap(":/banner_500x680.png")   # original file

@@ -1,5 +1,5 @@
 {
-  "show_vlc_gui": true,
+  "show_vlc_gui": false,
   "show_tooltips": true,
   "auto_pause_on_quality_issue": false,
   "vlc_backend": "libvlc",

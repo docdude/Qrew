@@ -5,9 +5,9 @@ Custom message boxes and dialogs using consistent styling
 
 import os
 from PyQt5.QtWidgets import (QDialog, QLabel, QVBoxLayout, QHBoxLayout, 
-                            QFileDialog, QLineEdit, QWidget)
+                            QFileDialog, QLineEdit)
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont
+
 
 from Qrew_button import Button
 from Qrew_styles import HTML_ICONS, BUTTON_STYLES
@@ -88,6 +88,7 @@ class QrewMessageBox(QDialog):
             color = "#ff9800"
         elif msg_type == self.Critical:
             icon = HTML_ICONS["no_entry"]
+         #   icon = '<img src="./no_entry.png" width="50" height="50">'
             color = "#f44336"
         else:  # Question
             icon = "?"
