@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/assets" recursive="yes">
+        <file>../assets/images</file>
+        <file>../assets/json_files</file>
+        <file>../assets/icons</file>
+        <file>../assets/spkr_icons</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,9 @@
+PyQt5>=5.15.0
+requests>=2.25.0
+flask>=2.0.0
+numpy>=1.19.0
+pandas>=1.2.0
+colour>=0.1.5
+gevent>=22.10.2
+python-vlc>=3.0.0
+pyobjc>=7.0.0; sys_platform == "darwin"
