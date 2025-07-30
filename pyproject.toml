@@ -60,4 +60,7 @@ packages = ["qrew"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-qrew = ["assets/**/*", "*.json"]
+qrew = ["*.json"]
+
+[tool.setuptools.package-dir]
+"" = "."
