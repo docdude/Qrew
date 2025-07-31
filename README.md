@@ -1,6 +1,6 @@
 # Qrew - Automated Loudspeaker Measurement System
 
-Qrew is a professional-grade automated loudspeaker measurement system that integrates with Room EQ Wizard (REW) to provide comprehensive acoustic analysis.
+Qrew is an automated loudspeaker measurement system that integrates with Room EQ Wizard (REW) to provide comprehensive acoustic analysis.
 
 ## Features
 
@@ -14,7 +14,7 @@ Qrew is a professional-grade automated loudspeaker measurement system that integ
 
 ### Prerequisites
 - Python 3.8 or higher
-- Room EQ Wizard (REW)
+- Room EQ Wizard (REW), requires Pro license
 - VLC Media Player
 
 ### Install from PyPI
