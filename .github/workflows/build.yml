@@ -60,7 +60,7 @@ jobs:
         print(f'Package directory contents:')
         for item in os.listdir(os.path.dirname(qrew.__file__)):
             print(f'  {item}')
-        print('✅ Package structure OK')
+        print('[OK] Package structure OK')
         "
     
     - name: Test main entry point
@@ -68,13 +68,13 @@ jobs:
         python -c "
         try:
             from qrew.main import main
-            print('✅ Main entry point accessible')
+            print('[OK] Main entry point accessible')
         except Exception as e:
-            print(f'⚠️  Main import issue (may be VLC-related): {e}')
+            print(f'[WARN]  Main import issue (may be VLC-related): {e}')
             # This is acceptable in CI - just test the function exists
             import qrew.main
             assert hasattr(qrew.main, 'main')
-            print('✅ Main function exists')
+            print('[OK] Main function exists')
         "
 
   build-python:
