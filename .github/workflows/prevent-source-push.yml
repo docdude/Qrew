@@ -1,0 +1,32 @@
+name: Prevent Source Code Push
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-no-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for source code
+        run: |
+          # Fail if Python files are found (except in .github)
+          if find . -name "*.py" -not -path "./.github/*" | grep -q .; then
+            echo "❌ ERROR: Python source files detected!"
+            echo "This repository should only contain binaries and documentation."
+            exit 1
+          fi
+
+          # Fail if source directories are found
+          for dir in qrew src source lib; do
+            if [ -d "$dir" ]; then
+              echo "❌ ERROR: Source directory '$dir' detected!"
+              echo "This repository should only contain binaries and documentation."
+              exit 1
+            fi
+          done
+
+          echo "✅ No source code detected - check passed"
