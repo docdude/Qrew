@@ -19,7 +19,7 @@ Download the latest release for your platform from the [Releases](https://github
 ## Requirements
 
 - VLC Media Player (must be installed separately)
-- REW (Room EQ Wizard) with API enabled
+- REW (Room EQ Wizard) with Pro upgrade license for full API functionality    
 - Python 3.8+ (for pip installation only)
 
 ## Installation
