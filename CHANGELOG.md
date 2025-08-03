@@ -10,10 +10,6 @@
 
 - Added wiki to public repo
 - Added check for multiple instances of Qrew, only 1 instance is allowed
-- Added wiki to public repo
-- Added wiki to public repo
-- Added wiki to public repo
-- Added wiki to public repo
 
 
 
@@ -21,20 +17,5 @@
 
 - Initial Release
 
-
-
-## [1.0.0] - 2025-08-02
-
-- Initial Release
-
--
-
--
-
-
-
-## [1.0.0] - 2025-08-02
-
-- Initial Release
 
 
