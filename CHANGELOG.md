@@ -18,10 +18,7 @@
 - Added check for multiple instances of Qrew, only 1 instance is allowed
 
 
-
 ## [1.0.0rc1] - 2025-08-02
 
 - Initial Release
-
-
 

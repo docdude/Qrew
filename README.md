@@ -40,7 +40,7 @@ pip install qrew
 #### Option 2: Install from downloaded wheel
 ```bash
 # Download the .whl file from releases, then:
-pip install qrew-1.0.0rc3-py3-none-any.whl
+pip install qrew-1.0.0rc4-py3-none-any.whl
 ```
 
 ## License
@@ -54,10 +54,6 @@ See the LICENSE file for the complete license terms.
 
 This repository contains only binary releases. For source code access, development, 
 contributions, or support, please contact the development team.
-
-## Wiki
-
-[Key resources and Help](https://github.com/docdude/Qrew/wiki) 
 
 ## Support
 
