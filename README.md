@@ -57,7 +57,7 @@ contributions, or support, please contact the development team.
 
 ## Wiki
 
-[Wiki](https://github.com/docdude/Qrew/wiki) 
+[Key resources and Help](https://github.com/docdude/Qrew/wiki) 
 
 ## Support
 
