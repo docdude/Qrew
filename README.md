@@ -55,6 +55,10 @@ See the LICENSE file for the complete license terms.
 This repository contains only binary releases. For source code access, development, 
 contributions, or support, please contact the development team.
 
+## Wiki
+
+[Wiki](https://github.com/docdude/Qrew/wiki) 
+
 ## Support
 
 For support, feature requests, or bug reports, please contact the development team.
