@@ -6,6 +6,24 @@
 
 
 
+## [1.0.0rc5] - 2025-08-11
+
+- Added dialog to notify user of the requirement for REW Pro license to use API write methods
+
+
+
+## [1.0.0rc5] - 2025-08-10
+
+- Added dialog to check for REW Pro license to allow API writes
+
+
+
+## [1.0.0rc5] - 2025-08-10
+
+- Added REW Pro license Dialog to verify user has Pro license required to fully use API write methods
+
+
+
 ## [1.0.0rc4] - 2025-08-04
 
 - Enlarged vertical size of QrewMessageBox to handle multi-line messages better.  Add new dialog for multi-instance notification and got rid of another QTimer

@@ -57,7 +57,7 @@ contributions, or support, please contact the development team.
 
 ## Support
 
-For support, feature requests, or bug reports, please contact the development team. You can also visit the  [wiki](https://github.com/docdude/Qrew/wiki) for more installation and getting started information.
+For support, feature requests, or bug reports, please contact the development team. You can also visit the [wiki](https://github.com/docdude/Qrew/wiki) for getting started or installation information.
 
 ---
 © 2025 Juan Francisco Loya. Licensed under GPL-3.0-or-later.
