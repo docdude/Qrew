@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.0rc5] - 2025-08-10
+
+- Added dialog to check for REW Pro license to allow API writes
+
+
+
 
 ## [1.0.0rc4] - 2025-08-04
 
